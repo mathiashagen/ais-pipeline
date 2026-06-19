@@ -1,0 +1,15 @@
+# Build output
+/build/
+/out/
+
+# CMake user files
+CMakeUserPresets.json
+
+# Editor / IDE
+.vs/
+*.user
+# .vscode/ is intentionally tracked — shared project config lives there.
+
+# OS
+Thumbs.db
+.DS_Store

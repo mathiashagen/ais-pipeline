@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug decoder_tests (gdb)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/debug/tests/decoder_tests.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        { "name": "PATH", "value": "C:/msys64/ucrt64/bin;${env:PATH}" }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+      // Builds the debug preset before launching. Remove this line if CMake
+      // Tools isn't active yet and the task can't be found.
+      "preLaunchTask": "CMake: build"
+    }
+  ]
+}

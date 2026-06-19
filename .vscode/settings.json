@@ -1,0 +1,25 @@
+{
+  // --- Build: drive everything through CMakePresets via the CMake Tools extension ---
+  "cmake.useCMakePresets": "always",
+  // Put the UCRT64 toolchain on PATH for configure/build/test/test-runner,
+  // so g++, cmake, ninja and the runtime DLLs resolve even if VS Code wasn't
+  // launched from the MSYS2 UCRT64 shell.
+  "cmake.environment": {
+    "PATH": "C:/msys64/ucrt64/bin;${env:PATH}"
+  },
+
+  // --- IntelliSense: clangd reads build/debug/compile_commands.json ---
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build/debug",
+    // Lets clangd ask GCC for its system include paths (must be explicit).
+    "--query-driver=C:/msys64/ucrt64/bin/g++.exe",
+    "--background-index",
+    "--header-insertion=never"
+  ],
+
+  // Turn OFF the Microsoft C/C++ extension's IntelliSense so it doesn't fight
+  // clangd. We keep that extension installed purely for its gdb debugger.
+  "C_Cpp.intelliSenseEngine": "disabled",
+
+  "cmake.cmakePath": "C:/msys64/ucrt64/bin/cmake.exe"
+}
