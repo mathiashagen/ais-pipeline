@@ -4,6 +4,7 @@
 add_library(ais_decoder
     src/version.cpp
     src/sentence.cpp
+    src/payload.cpp
 )
 
 target_include_directories(ais_decoder PUBLIC include)
