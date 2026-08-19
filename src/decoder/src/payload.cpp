@@ -38,4 +38,10 @@ std::uint64_t Payload::get_uint(std::size_t start, std::size_t length) const {
     return value;
 }
 
+std::int64_t Payload::get_int(std::size_t start, std::size_t length) const {
+    std::uint64_t raw = get_uint(start, length);
+    const int shift = 64 - static_cast<int>(length);
+    return static_cast<std::int64_t>(raw << shift) >> shift;
+}
+
 }  // namespace ais

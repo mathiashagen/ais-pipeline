@@ -26,6 +26,8 @@ public:
     // first, as an unsigned integer. AIS integer fields are big-endian.
     std::uint64_t get_uint(std::size_t start, std::size_t length) const;
 
+    std::int64_t get_int(std::size_t start, std::size_t length) const;
+
 private:
     std::vector<std::uint8_t> bits_;  // one entry per bit, value 0 or 1
 };
