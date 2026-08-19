@@ -3,6 +3,8 @@
 #include "ais/sentence.hpp"
 #include "ais/payload.hpp"
 #include "ais/position_report.hpp"
+#include "ais/decoder.hpp"
+#include "ais/sentence_assembler.hpp"
 
 TEST(Sentence, ChecksumValidation) {
     // Example of a test that checks the checksum of an AIS sentence.
@@ -90,4 +92,44 @@ TEST(PositionReport, DecodesValidMessage) {
     EXPECT_EQ(result->maneuver_indicator, 0);
     EXPECT_FALSE(result->raim);
     EXPECT_EQ(result->radio_status, 2281u);
+}
+
+TEST(Decoder, DecodesFullSentence) {
+    const char* s = "!AIVDM,1,1,,B,15M67FC000G?ufbE`FepT@3n00Sa,0*5C";
+    ais::Sentence sentence(s);
+    auto result = ais::decode_sentence(sentence);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->mmsi, 366053209u);
+}
+
+TEST(Decoder, RejectsBadChecksum) {
+    const char* s = "!AIVDM,1,1,,A,15M67FC000G?ufbE`FepT@3n00Sa,0*00";
+    ais::Sentence sentence(s);
+    auto result = ais::decode_sentence(sentence);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(SentenceAssembler, ReassemblesTwoParts) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,2,1,5,B,15M67FC000G?uf,0*05");
+    auto result1 = assembler.add(part1);
+    EXPECT_FALSE(result1.has_value());   // still waiting on part 2
+
+    ais::Sentence part2("!AIVDM,2,2,5,B,bE`FepT@3n00Sa,0*7F");
+    auto result2 = assembler.add(part2);
+    ASSERT_TRUE(result2.has_value());
+
+    EXPECT_EQ(result2->bit_count(), 168);
+    auto report = ais::decode_position_report(*result2);
+    ASSERT_TRUE(report.has_value());
+    EXPECT_EQ(report->mmsi, 366053209u);
+}
+
+TEST(SentenceAssembler, PassesThroughSinglePart) {
+    ais::SentenceAssembler assembler;
+    ais::Sentence sentence("!AIVDM,1,1,,B,15M67FC000G?ufbE`FepT@3n00Sa,0*5C");
+    auto result = assembler.add(sentence);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->bit_count(), 168);
 }
