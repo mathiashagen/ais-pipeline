@@ -15,6 +15,34 @@ TEST(Sentence, ChecksumValidation) {
     EXPECT_FALSE(invalid_ais_sentence.is_valid());
 }
 
+TEST(Sentence, FieldExtraction) {
+    const char* s = "!AIVDM,1,1,,B,15M67FC000G?ufbE`FepT@3n00Sa,0*5C";
+    ais::Sentence sentence(s);
+    EXPECT_TRUE(sentence.is_well_formed());
+    EXPECT_EQ(sentence.fragment_count(), 1);
+    EXPECT_EQ(sentence.fragment_number(), 1);
+    EXPECT_FALSE(sentence.sequence_id().has_value());
+    EXPECT_EQ(sentence.channel(), "B");
+    EXPECT_EQ(sentence.payload(), "15M67FC000G?ufbE`FepT@3n00Sa");
+    EXPECT_EQ(sentence.fill_bits(), 0);
+}
+
+TEST(Sentence, WellFormed) {
+    ais::Sentence sentence("!AIVDM,1,1,,B,15M67FC000G?ufbE`FepT@3n00Sa,0*5C");
+    EXPECT_TRUE(sentence.is_well_formed());
+
+    ais::Sentence too_few("not,enough,commas*00");   // has a checksum suffix now
+    EXPECT_FALSE(too_few.is_well_formed());
+
+    ais::Sentence no_checksum("not,enough,commas");   // no '*' at all
+    EXPECT_FALSE(no_checksum.is_well_formed());
+}
+
+TEST(Sentence, FillBitsNonZero) {
+    ais::Sentence s("!AIVDM,1,1,,B,15M67FC000G?ufbE`FepT@3n00Sa,2*5C");
+    EXPECT_EQ(s.fill_bits(), 2);
+}
+
 TEST(Payload, BitExtraction) {
     const char* payloadStr = "15M67FC000G?ufbE`FepT@3n00Sa";
     ais::Payload payload(payloadStr, 0);
