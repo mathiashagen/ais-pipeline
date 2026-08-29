@@ -37,8 +37,8 @@ private:
     int fragment_count_ = 0;
     int fragment_number_ = 0;
     std::optional<int> sequence_id_;
-    std::string_view channel_;
-    std::string_view payload_;
+    std::string channel_;
+    std::string payload_;
     int fill_bits_ = 0;
 };
 
