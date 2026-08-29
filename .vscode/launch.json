@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug decoder_tests (gdb)",
+      "name": "Debug all_tests (gdb)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/debug/tests/decoder_tests.exe",
+      "program": "${workspaceFolder}/build/debug/tests/all_tests.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

@@ -8,4 +8,5 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 enable_testing()
 
 add_subdirectory(src/decoder)
+add_subdirectory(src/pipeline)
 add_subdirectory(tests)
