@@ -1,0 +1,3 @@
+add_executable(kystverket_pipeline main.cpp)
+
+target_link_libraries(kystverket_pipeline PRIVATE ais_pipeline ais_decoder)
