@@ -9,6 +9,7 @@ add_executable(all_tests
     tcp_client_tests.cpp
     tag_block_tests.cpp
     decoder_stage_tests.cpp
+    sqlite_writer_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE
