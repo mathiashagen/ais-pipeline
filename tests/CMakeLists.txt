@@ -10,11 +10,13 @@ add_executable(all_tests
     tag_block_tests.cpp
     decoder_stage_tests.cpp
     sqlite_writer_tests.cpp
+    position_reader_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE
     ais_decoder
     ais_pipeline
+    ais_api
     GTest::gtest_main
 )
 
