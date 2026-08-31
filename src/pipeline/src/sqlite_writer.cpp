@@ -1,5 +1,7 @@
 #include "ais/sqlite_writer.hpp"
 
+#include <chrono>
+
 namespace ais {
 
 SqliteWriter::SqliteWriter(std::string db_path) {
@@ -11,7 +13,7 @@ SqliteWriter::SqliteWriter(std::string db_path) {
 
     const char* sql = 
         "CREATE TABLE IF NOT EXISTS "
-        "position_reports (mmsi INTEGER, latitude REAL, longitude REAL, sog REAL, cog REAL, true_heading REAL, timestamp INTEGER, message_type INTEGER, nav_status INTEGER); ";
+        "position_reports (mmsi INTEGER, latitude REAL, longitude REAL, sog REAL, cog REAL, true_heading REAL, timestamp INTEGER, message_type INTEGER, nav_status INTEGER, received_at INTEGER); ";
 
     if (sqlite3_exec(connection_.get(), sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(connection_.get()));
@@ -19,7 +21,7 @@ SqliteWriter::SqliteWriter(std::string db_path) {
 
     sqlite3_stmt* stmt = nullptr;
     const char* insert_sql = 
-        "INSERT INTO position_reports (mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        "INSERT INTO position_reports (mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     if (sqlite3_prepare_v2(connection_.get(), insert_sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(connection_.get()));
     }
@@ -62,6 +64,8 @@ void SqliteWriter::run(ThreadSafeQueue<PositionReport>& input, std::stop_token s
             sqlite3_bind_int(stmt, 7, report->timestamp);
             sqlite3_bind_int(stmt, 8, report->message_type);
             sqlite3_bind_int(stmt, 9, static_cast<int>(report->nav_status));
+            auto now = std::chrono::system_clock::now();
+            sqlite3_bind_int64(stmt, 10, std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
             if (sqlite3_step(stmt) != SQLITE_DONE) {
                 throw std::runtime_error(sqlite3_errmsg(connection_.get()));
             }

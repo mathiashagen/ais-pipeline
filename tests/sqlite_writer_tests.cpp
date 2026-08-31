@@ -28,6 +28,7 @@ TEST(SqliteWriterTest, BasicTest) {
     });
 
     // Push the report to the input queue
+    int64_t received_at = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     input.push(report);
 
     // Stop the writer thread
@@ -40,7 +41,7 @@ TEST(SqliteWriterTest, BasicTest) {
         ais::SqliteConnection connection = ais::SqliteConnection(db);
 
         sqlite3_stmt* stmt;
-        ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status FROM position_reports", -1, &stmt, nullptr), SQLITE_OK);
+        ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at FROM position_reports", -1, &stmt, nullptr), SQLITE_OK);
 
         ais::SqliteStatement statement = ais::SqliteStatement(stmt);
 
@@ -54,6 +55,7 @@ TEST(SqliteWriterTest, BasicTest) {
         EXPECT_EQ(sqlite3_column_int(statement.get(), 6), report.timestamp);
         EXPECT_EQ(sqlite3_column_int(statement.get(), 7), report.message_type);
         EXPECT_EQ(sqlite3_column_int(statement.get(), 8), static_cast<int>(report.nav_status));
+        EXPECT_NEAR(sqlite3_column_int64(statement.get(), 9), received_at, 10);
 
         ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
     }
