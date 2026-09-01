@@ -5,12 +5,37 @@
 
 namespace ais {
 
+namespace {
+
+// Resets a statement on scope exit, including when an exception unwinds past
+// it. A stepped statement that is never reset keeps its read transaction open,
+// which in WAL mode pins a snapshot and stops the writer checkpointing.
+class StatementReset {
+public:
+    explicit StatementReset(sqlite3_stmt* stmt) : stmt_(stmt) {}
+    ~StatementReset() { sqlite3_reset(stmt_); }
+
+    StatementReset(const StatementReset&) = delete;
+    StatementReset& operator=(const StatementReset&) = delete;
+
+private:
+    sqlite3_stmt* stmt_;
+};
+
+}  // namespace
+
 PositionReader::PositionReader(std::string db_path) {
     sqlite3* db = nullptr;
-    if (sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+    const int rc = sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+    // sqlite3_open_v2 hands back a handle that must be closed even when it
+    // fails, so take ownership before checking the result.
+    connection_ = SqliteConnection(db);
+    if (rc != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }
-    connection_ = SqliteConnection(db);
+
+    // Per-connection, so the writer's timeout does not cover this one.
+    sqlite3_busy_timeout(connection_.get(), 5000);
 
     sqlite3_stmt* history_stmt = nullptr;
     const char* history_sql =
@@ -48,55 +73,50 @@ PositionReader::PositionReader(std::string db_path) {
     positions_in_area_statement_ = SqliteStatement(positions_in_area_stmt);
 }
 
-std::vector<PositionRecord> PositionReader::history(std::uint32_t mmsi, int limit) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    sqlite3_stmt* stmt = history_statement_.get();
-    sqlite3_reset(stmt);
-    sqlite3_bind_int(stmt, 1, mmsi);
-    sqlite3_bind_int(stmt, 2, limit);
+// Steps a bound statement to exhaustion. Distinguishes "no more rows" from a
+// failure: sqlite3_step returns SQLITE_BUSY, SQLITE_ERROR and SQLITE_CORRUPT
+// through the same path as SQLITE_DONE, so a loop that only tests for
+// SQLITE_ROW reports a database failure as an empty result set.
+std::vector<PositionRecord> PositionReader::collect_rows(sqlite3_stmt* stmt) {
+    StatementReset reset_on_exit(stmt);
 
     std::vector<PositionRecord> results;
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        PositionRecord record = read_current_row(stmt);
-        results.push_back(record);
+    int rc = SQLITE_OK;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        results.push_back(read_current_row(stmt));
     }
-    
+    if (rc != SQLITE_DONE) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+
     return results;
+}
+
+std::vector<PositionRecord> PositionReader::history(std::uint32_t mmsi, int limit) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sqlite3_stmt* stmt = history_statement_.get();
+    sqlite3_bind_int(stmt, 1, mmsi);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    return collect_rows(stmt);
 }
 
 std::vector<PositionRecord> PositionReader::latest_positions() {
     std::lock_guard<std::mutex> lock(mutex_);
-    sqlite3_stmt* stmt = latest_positions_statement_.get();
-    sqlite3_reset(stmt);
 
-    std::vector<PositionRecord> results;
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        PositionRecord record = read_current_row(stmt);
-        results.push_back(record);
-    }
-
-    return results;
+    return collect_rows(latest_positions_statement_.get());
 }
 
 std::vector<PositionRecord> PositionReader::positions_in_area(BoundingBox box) {
     std::lock_guard<std::mutex> lock(mutex_);
     sqlite3_stmt* stmt = positions_in_area_statement_.get();
-    sqlite3_reset(stmt);
     sqlite3_bind_double(stmt, 1, box.min_lat);
     sqlite3_bind_double(stmt, 2, box.max_lat);
     sqlite3_bind_double(stmt, 3, box.min_lon);
     sqlite3_bind_double(stmt, 4, box.max_lon);
 
-    std::vector<PositionRecord> results;
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        PositionRecord record = read_current_row(stmt);
-        results.push_back(record);
-    }
-
-    return results;
+    return collect_rows(stmt);
 }
 
 PositionRecord PositionReader::read_current_row(sqlite3_stmt* stmt) {
