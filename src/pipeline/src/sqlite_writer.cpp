@@ -1,6 +1,7 @@
 #include "ais/sqlite_writer.hpp"
 
 #include <chrono>
+#include <string_view>
 
 namespace ais {
 
@@ -10,6 +11,22 @@ SqliteWriter::SqliteWriter(std::string db_path) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }
     connection_ = SqliteConnection(db);
+    sqlite3_busy_timeout(connection_.get(), 5000);
+
+    sqlite3_stmt* wal_stmt = nullptr;
+    if (sqlite3_prepare_v2(connection_.get(), "PRAGMA journal_mode=WAL;", -1, &wal_stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+    SqliteStatement wal_statement(wal_stmt);
+
+    if (sqlite3_step(wal_stmt) != SQLITE_ROW) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+
+    const unsigned char* mode = sqlite3_column_text(wal_stmt, 0);
+    if (mode == nullptr || std::string_view(reinterpret_cast<const char*>(mode)) != "wal") {
+        throw std::runtime_error("could not enable WAL mode on " + db_path);
+    }
 
     const char* sql = 
         "CREATE TABLE IF NOT EXISTS "
