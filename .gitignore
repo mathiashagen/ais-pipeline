@@ -5,6 +5,10 @@
 # CMake user files
 CMakeUserPresets.json
 
+# Runtime database. WAL mode adds -wal and -shm alongside it, and a -wal file
+# can hold committed rows.
+ais_data.db*
+
 # Editor / IDE
 .vs/
 *.user
