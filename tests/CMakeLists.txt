@@ -11,6 +11,7 @@ add_executable(all_tests
     decoder_stage_tests.cpp
     sqlite_writer_tests.cpp
     position_reader_tests.cpp
+    position_record_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE
