@@ -44,5 +44,9 @@ int main() {
         }
     });
 
+    server.set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
+        res.set_header("Access-Control-Allow-Origin", "*");
+    });
+
     server.listen("0.0.0.0", 8080);
 }
