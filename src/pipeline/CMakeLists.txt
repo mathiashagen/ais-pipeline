@@ -8,7 +8,7 @@ add_library(ais_pipeline
 
 target_link_libraries(ais_pipeline PUBLIC ais_decoder)
 
-target_compile_definitions(ais_pipeline PUBLIC ASIO_STANDALONE _WIN32_WINNT=0x0601)
+target_compile_definitions(ais_pipeline PUBLIC ASIO_STANDALONE _WIN32_WINNT=0x0A00)
 target_link_libraries(ais_pipeline PUBLIC ws2_32 mswsock)
 
 find_package(SQLite3 REQUIRED)

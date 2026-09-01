@@ -13,3 +13,5 @@ add_subdirectory(src/pipeline)
 add_subdirectory(tests)
 add_subdirectory(src/app)
 add_subdirectory(src/api)
+add_subdirectory(src/api_server)
+

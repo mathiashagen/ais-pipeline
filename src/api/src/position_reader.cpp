@@ -49,6 +49,7 @@ PositionReader::PositionReader(std::string db_path) {
 }
 
 std::vector<PositionRecord> PositionReader::history(std::uint32_t mmsi, int limit) {
+    std::lock_guard<std::mutex> lock(mutex_);
     sqlite3_stmt* stmt = history_statement_.get();
     sqlite3_reset(stmt);
     sqlite3_bind_int(stmt, 1, mmsi);
@@ -65,6 +66,7 @@ std::vector<PositionRecord> PositionReader::history(std::uint32_t mmsi, int limi
 }
 
 std::vector<PositionRecord> PositionReader::latest_positions() {
+    std::lock_guard<std::mutex> lock(mutex_);
     sqlite3_stmt* stmt = latest_positions_statement_.get();
     sqlite3_reset(stmt);
 
@@ -79,6 +81,7 @@ std::vector<PositionRecord> PositionReader::latest_positions() {
 }
 
 std::vector<PositionRecord> PositionReader::positions_in_area(BoundingBox box) {
+    std::lock_guard<std::mutex> lock(mutex_);
     sqlite3_stmt* stmt = positions_in_area_statement_.get();
     sqlite3_reset(stmt);
     sqlite3_bind_double(stmt, 1, box.min_lat);

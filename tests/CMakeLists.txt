@@ -25,7 +25,6 @@ target_compile_definitions(all_tests PRIVATE
     FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
 
-target_compile_definitions(all_tests PRIVATE ASIO_STANDALONE _WIN32_WINNT=0x0601)
 target_link_libraries(all_tests PRIVATE ws2_32 mswsock)
 
 # Registers each TEST() with CTest so `ctest` discovers them automatically.

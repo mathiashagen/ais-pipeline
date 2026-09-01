@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <mutex>
 
 namespace ais {
 
@@ -28,6 +29,7 @@ private:
     ais::SqliteStatement latest_positions_statement_;
     ais::SqliteStatement positions_in_area_statement_;
     PositionRecord read_current_row(sqlite3_stmt* stmt);
+    std::mutex mutex_;
 };
 
 }
