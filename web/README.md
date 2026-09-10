@@ -1,32 +1,27 @@
-# React + TypeScript + Vite
+# web — live ship map
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A small React + Leaflet frontend for the AIS pipeline. It polls `api_server`
+every five seconds, draws every ship with a known position around Ålesund,
+fades markers whose last report is stale, and shows the recorded track of a
+ship when you click it.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open <http://localhost:5173>. The app expects `api_server` on
+`http://localhost:8080`; set `VITE_API_URL` (see `.env.example`) to point it
+elsewhere.
+
+## Layout
+
+| Path              | What it does                                                      |
+| ----------------- | ----------------------------------------------------------------- |
+| `src/api/`        | Typed client for the three REST endpoints, and the record shape.  |
+| `src/hooks/`      | Polling hooks: all positions, one ship's history, a shared clock. |
+| `src/components/` | The map, the ship markers, and the selected ship's track.         |
+
+`npm run build` type-checks and bundles to `dist/`; `npm run lint` runs Oxlint.
