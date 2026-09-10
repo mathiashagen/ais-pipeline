@@ -24,7 +24,32 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-.status .error {
+.selection {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.selection strong {
+  color: #f97316;
+}
+
+.selection button {
+  font: inherit;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.status .error,
+.selection .error {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   background: #fdecea;
@@ -52,7 +77,8 @@ h1 {
     border-bottom-color: #374151;
   }
 
-  .status .error {
+  .status .error,
+  .selection .error {
     background: #3f1d1d;
     color: #fecaca;
   }

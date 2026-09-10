@@ -30,7 +30,14 @@ function formatValue(value: number | null, digits: number, unit: string): string
   return value === null ? "—" : `${value.toFixed(digits)}${unit}`;
 }
 
-export function ShipMarkers({ records, now }: { records: PositionRecord[]; now: number }) {
+export interface ShipMarkersProps {
+  records: PositionRecord[];
+  now: number;
+  selectedMmsi: number | null;
+  onSelect: (mmsi: number) => void;
+}
+
+export function ShipMarkers({ records, now, selectedMmsi, onSelect }: ShipMarkersProps) {
   // Leaflet throws on a null LatLng, and the C++ side models position as
   // std::optional, so these have to go before anything reaches the map.
   const positioned = records.filter(hasPosition);
@@ -39,6 +46,7 @@ export function ShipMarkers({ records, now }: { records: PositionRecord[]; now: 
     <>
       {positioned.map((record) => {
         const stale = ageInSeconds(record, now) > STALE_AFTER_SECONDS;
+        const selected = record.mmsi === selectedMmsi;
 
         return (
           <CircleMarker
@@ -47,12 +55,13 @@ export function ShipMarkers({ records, now }: { records: PositionRecord[]; now: 
             // closes open popups and makes ships appear to teleport.
             key={record.mmsi}
             center={[record.latitude, record.longitude]}
-            radius={5}
+            radius={selected ? 8 : 5}
+            eventHandlers={{ click: () => onSelect(record.mmsi) }}
             pathOptions={{
-              color: colorFor(record, now),
+              color: selected ? "#f97316" : colorFor(record, now),
               fillColor: colorFor(record, now),
               fillOpacity: stale ? 0.25 : 0.8,
-              weight: 1,
+              weight: selected ? 3 : 1,
             }}
           >
             <Popup>
