@@ -25,7 +25,9 @@ target_compile_definitions(all_tests PRIVATE
     FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
 )
 
-target_link_libraries(all_tests PRIVATE ws2_32 mswsock)
+if(WIN32)
+    target_link_libraries(all_tests PRIVATE ws2_32 mswsock)
+endif()
 
 # Registers each TEST() with CTest so `ctest` discovers them automatically.
 include(GoogleTest)
