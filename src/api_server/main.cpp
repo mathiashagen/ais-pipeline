@@ -1,13 +1,66 @@
+#include <cstdlib>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <string_view>
+
 #include "httplib.h"
 #include "ais/position_reader.hpp"
 
-int main() {
+namespace {
+
+// api_server [db_path] [port]. Defaults match kystverket_pipeline's, so the
+// two find the same database when started from the same directory.
+struct Config {
+    std::string db_path = "ais_data.db";
+    int port = 8080;
+};
+
+void print_usage(std::string_view program) {
+    std::cerr << "usage: " << program << " [db_path] [port]\n"
+              << "  db_path  SQLite database written by kystverket_pipeline (default ais_data.db)\n"
+              << "  port     HTTP port to listen on                          (default 8080)\n";
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    if (argc > 1 && (std::string_view(argv[1]) == "-h" || std::string_view(argv[1]) == "--help")) {
+        print_usage(argv[0]);
+        return EXIT_SUCCESS;
+    }
+    if (argc > 3) {
+        print_usage(argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    Config config;
+    if (argc > 1) config.db_path = argv[1];
+    if (argc > 2) {
+        try {
+            config.port = std::stoi(argv[2]);
+        } catch (const std::exception&) {
+            std::cerr << "port must be a number\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    // The reader opens the database read-only, so a missing file is an error
+    // here rather than something SQLite silently creates. Report it instead
+    // of letting the exception terminate the process.
+    std::optional<ais::PositionReader> reader;
+    try {
+        reader.emplace(config.db_path);
+    } catch (const std::exception& e) {
+        std::cerr << "Could not open " << config.db_path << ": " << e.what()
+                  << "\nRun kystverket_pipeline first, or pass the path to its database.\n";
+        return EXIT_FAILURE;
+    }
+
     httplib::Server server;
 
-    ais::PositionReader reader("ais_data.db");
-
     server.Get("/positions", [&reader](const httplib::Request&, httplib::Response& res) {
-        auto records = reader.latest_positions();
+        auto records = reader->latest_positions();
         nlohmann::json j = records;
 
         res.set_content(j.dump(), "application/json");
@@ -31,7 +84,7 @@ int main() {
             return;
         }
 
-        auto records = reader.positions_in_area(box);
+        auto records = reader->positions_in_area(box);
         nlohmann::json j = records;
         res.set_content(j.dump(), "application/json");
     });
@@ -59,7 +112,7 @@ int main() {
             return;
         }
 
-        auto records = reader.history(mmsi, limit);
+        auto records = reader->history(mmsi, limit);
         nlohmann::json j = records;
         res.set_content(j.dump(), "application/json");
     });
@@ -68,5 +121,13 @@ int main() {
         res.set_header("Access-Control-Allow-Origin", "*");
     });
 
-    server.listen("0.0.0.0", 8080);
+    std::cerr << "Serving " << config.db_path << " on http://localhost:" << config.port << "\n";
+
+    // listen() only returns on failure to bind (port in use, no permission)
+    // or after stop(); nobody calls stop() here, so a return is an error.
+    if (!server.listen("0.0.0.0", config.port)) {
+        std::cerr << "Could not listen on port " << config.port << "\n";
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }

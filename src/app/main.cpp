@@ -1,5 +1,9 @@
 #include <csignal>
+#include <cstdlib>
+#include <iostream>
 #include <stop_token>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <algorithm>
 
@@ -9,21 +13,63 @@
 #include "ais/decoder_stage.hpp"
 #include "ais/sqlite_writer.hpp"
 
+namespace {
+
+// Defaults point at Kystverket's open feed so the pipeline runs with no
+// arguments, but every value can be overridden positionally without a
+// rebuild: kystverket_pipeline [host] [port] [db_path]
+struct Config {
+    std::string host = "153.44.253.27";
+    std::string port = "5631";
+    std::string db_path = "ais_data.db";
+};
+
+void print_usage(std::string_view program) {
+    std::cerr << "usage: " << program << " [host] [port] [db_path]\n"
+              << "  host     AIS feed host        (default 153.44.253.27)\n"
+              << "  port     AIS feed TCP port    (default 5631)\n"
+              << "  db_path  SQLite database file (default ais_data.db)\n";
+}
+
+Config parse_args(int argc, char* argv[]) {
+    Config config;
+    if (argc > 1) config.host = argv[1];
+    if (argc > 2) config.port = argv[2];
+    if (argc > 3) config.db_path = argv[3];
+    return config;
+}
+
+}  // namespace
+
 std::stop_source g_stop_source;
 
 extern "C" void handle_sigint(int) {
     g_stop_source.request_stop();
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc > 1 && (std::string_view(argv[1]) == "-h" || std::string_view(argv[1]) == "--help")) {
+        print_usage(argv[0]);
+        return EXIT_SUCCESS;
+    }
+    if (argc > 4) {
+        print_usage(argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    const Config config = parse_args(argc, argv);
+
     std::signal(SIGINT, handle_sigint);
 
     ais::ThreadSafeQueue<std::string> queue1(500);
     ais::ThreadSafeQueue<ais::PositionReport> queue2(500);
 
-    ais::TcpClient client("153.44.253.27", "5631");
+    ais::TcpClient client(config.host, config.port);
     ais::DecoderStage decoder;
-    ais::SqliteWriter writer("ais_data.db");
+    ais::SqliteWriter writer(config.db_path);
+
+    std::cerr << "Reading AIS from " << config.host << ":" << config.port
+              << ", writing to " << config.db_path << ". Ctrl+C to stop.\n";
 
     std::jthread client_thread([&client, &queue1](std::stop_token st) {
         int fail_count = 0;
@@ -31,8 +77,9 @@ int main() {
             try {
                 client.run(queue1, st);
                 break;
-            } catch (const std::exception&) {
+            } catch (const std::exception& e) {
                 ++fail_count;
+                std::cerr << "Connection failed (" << e.what() << "), retrying\n";
 
                 std::chrono::milliseconds sleep_duration(std::min(1000 * (1 << fail_count), 30000));
                 auto start = std::chrono::steady_clock::now();
@@ -68,5 +115,5 @@ int main() {
     queue2.close();
     writer_thread.join();
 
-    return 0;
+    return EXIT_SUCCESS;
 }
