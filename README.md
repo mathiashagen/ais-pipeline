@@ -37,7 +37,7 @@ Kystverket AIS feed  (TCP, NMEA 0183 sentences with tag blocks)
          │  ThreadSafeQueue<PositionReport>  (bounded)
          ▼
 ┌─────────────────┐  writer thread
-│  SqliteWriter   │  prepared INSERT, WAL mode
+│  SqliteWriter   │  batched transactions, WAL mode
 └────────┬────────┘
          │  ais_data.db
          ▼
@@ -67,33 +67,64 @@ returns.
 - **Position reports** (message types 1, 2 and 3): MMSI, position, speed and
   course over ground, heading, navigational status, rate of turn.
 - **Pipeline**: Asio TCP client with reconnect, a bounded thread-safe queue,
-  and an SQLite writer using RAII wrappers around the C handles.
+  and an SQLite writer using RAII wrappers around the C handles. It commits
+  whatever has queued up as one transaction, so bursts are written in batches.
 - **REST API**: latest position per ship, ships inside a bounding box, and the
-  history of one ship.
+  history of one ship. Latest and area queries read a `latest_positions` table
+  that a trigger keeps at one row per ship, so they stay fast however much
+  history accumulates; history uses an index on `(mmsi, received_at)`.
 - **Radar display**: fixed on a centre chosen by place-name search, a click on
   the map or the device's position, with stepped ranges from 1 to 60 nm and
   range rings that always fill the view the same way. Ships are arrows along
   their heading, coloured by navigational status, faded when they go quiet;
   selecting one draws its recorded track. The coastline is Kartverket's N250
   data, pre-processed into tiles by `web/scripts/build-coastline.mjs`.
-- **Tests**: 35 GoogleTest cases covering the decoder, framer, queue, TCP
+- **Tests**: 47 GoogleTest cases covering the decoder, framer, queue, TCP
   client, writer and reader, including a fixture of 765 real lines captured
   from the live feed.
 
 Static ship data (message type 5, with name and dimensions) is not decoded yet.
 
-## Decoder throughput
+## Throughput
 
-Decoding the 765-line live fixture 200 times in a loop, single-threaded,
-release build, on a Ryzen 7 9800X3D:
+Release build, on a Ryzen 7 9800X3D with a Samsung 990 PRO NVMe SSD.
+
+### Decoder
+
+Decoding the 765-line live fixture 200 times in a loop, single-threaded:
 
 | Metric                                   | Value          |
 | ---------------------------------------- | -------------- |
 | Sentences parsed, assembled and decoded  | ~4.5 million/s |
 | Time per sentence                        | ~0.22 µs       |
 
-The live feed delivers a few hundred sentences per second, so the decoder is
-nowhere near the bottleneck; the SQLite write is.
+### Writer
+
+Position reports pushed through a `ThreadSafeQueue` into `SqliteWriter::run()`
+as fast as the queue accepts them, timed until the last one is committed. The
+database has the full schema, so every insert also maintains the index and
+the `latest_positions` trigger.
+
+| Writer                                             | Reports/s  |
+| -------------------------------------------------- | ---------- |
+| One commit per report, `synchronous=FULL` (before) | ~670       |
+| Batched transactions, 5,000-report burst           | ~580,000   |
+| Batched transactions, sustained over 100,000       | ~125,000   |
+
+Committing each report on its own made every insert wait for the disk to
+confirm the write, so it barely changed between debug and release builds.
+The writer now takes whatever has queued up since its last commit and writes
+it as one transaction, with `synchronous=NORMAL`. On a quiet feed a batch is a
+single report; batches grow only during bursts. The sustained figure is lower
+than the burst because the database grows and SQLite periodically moves the
+write-ahead log into the main file.
+
+### In context
+
+The live feed averages a few reports per second and has delivered around 650
+in a single second. Before batching, a burst that size used the writer's
+whole capacity. Now neither the decoder nor the writer comes close to being
+the bottleneck; the feed itself is.
 
 ## Building
 
