@@ -5,9 +5,15 @@
 }
 
 header {
+  /*
+   * Above Leaflet's panes and controls (z-index up to 1000), so the place
+   * search results can drop down over the map.
+   */
+  position: relative;
+  z-index: 1100;
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.5rem 1rem;
   flex-wrap: wrap;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid #e5e7eb;
@@ -38,7 +44,8 @@ h1 {
   color: #f97316;
 }
 
-.selection button {
+.selection button,
+.location > button {
   font: inherit;
   padding: 0.15rem 0.5rem;
   border: 1px solid currentColor;
@@ -48,12 +55,119 @@ h1 {
   cursor: pointer;
 }
 
+.location {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.location-current {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.location > button.active {
+  background: #f97316;
+  border-color: #f97316;
+  color: #fff;
+}
+
+.location > button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.location-search {
+  position: relative;
+}
+
+.location-search input {
+  width: 13rem;
+  max-width: 60vw;
+  font: inherit;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.location-results {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 1;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.location-results button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.location-results button:hover,
+.location-results button:focus-visible {
+  background: var(--accent-bg);
+}
+
+.location-results strong {
+  color: var(--text-h);
+}
+
+.location-results span {
+  font-size: 0.8rem;
+}
+
+.location-note {
+  padding: 0.3rem 0.5rem;
+}
+
 .status .error,
-.selection .error {
+.selection .error,
+.location .error {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   background: #fdecea;
   color: #7f1d1d;
+}
+
+/*
+ * The radar is a fixed dark instrument look in both page themes, so its
+ * colours are set here directly rather than taken from the theme tokens.
+ */
+.radar {
+  --radar-ground: #121614;
+  --radar-ink: #8fa596;
+  --radar-ink-dim: #5b6d60;
+  --radar-panel: #1a201c;
+  --radar-line: #2c3830;
+
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--radar-ground);
 }
 
 /*
@@ -66,10 +180,182 @@ h1 {
   min-height: 0;
 }
 
-/* Leaflet's popups and controls are light by default; keep them readable. */
-.leaflet-popup-content {
+.radar .leaflet-container {
+  /* Leaflet's default is a light grey meant to sit behind tiles. */
+  background: var(--radar-ground);
+  font-family: var(--mono);
+}
+
+/* Leaflet adds a white box behind every divIcon unless told otherwise. */
+.radar-blip,
+.radar-label {
+  background: none;
+  border: none;
+}
+
+.radar-blip svg {
+  display: block;
+  overflow: visible;
+}
+
+.radar-label {
+  color: var(--radar-ink-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  /* Offset the text off its anchor point so it sits beside the ring. */
+  transform: translate(4px, -14px);
+}
+
+.radar-label.radar-north {
+  transform: translate(-4px, -18px);
+}
+
+.radar-legend {
+  position: absolute;
+  left: 0.75rem;
+  /* Clear of Leaflet's attribution strip along the bottom edge. */
+  bottom: 1.75rem;
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  max-width: calc(100% - 1.5rem);
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  list-style: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--radar-panel) 88%, transparent);
+  color: var(--radar-ink);
+  font: 12px var(--mono);
+  pointer-events: none;
+}
+
+.radar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.radar-legend .radar-legend-note {
+  flex-basis: 100%;
+  color: var(--radar-ink-dim);
+}
+
+.radar .leaflet-container {
+  /*
+   * Leaflet only claims touch gestures when its own drag or pinch handlers
+   * are on. Both are off here -- pinch steps the range instead -- so without
+   * this the browser would pan or zoom the page under the fingers.
+   */
+  touch-action: none;
+}
+
+.radar .leaflet-container.picking {
+  cursor: crosshair;
+}
+
+.radar-range {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--radar-line);
+  border-radius: 6px;
+  background: var(--radar-panel);
+  color: var(--radar-ink);
+  font: 12px var(--mono);
+  text-align: center;
+}
+
+.radar-range button {
+  width: 100%;
+  min-width: 3.25rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: 18px/1.2 var(--mono);
+  cursor: pointer;
+}
+
+.radar-range button:hover:not(:disabled) {
+  background: var(--radar-line);
+}
+
+.radar-range button:disabled {
+  color: var(--radar-ink-dim);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.radar-range output {
+  padding: 0.25rem 0.4rem;
+  border-block: 1px solid var(--radar-line);
+  white-space: nowrap;
+}
+
+.radar-notice {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  z-index: 1000;
+  max-width: calc(100% - 7rem);
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  background: var(--radar-panel);
+  color: var(--radar-ink);
   font-size: 0.85rem;
-  line-height: 1.5;
+  text-align: center;
+}
+
+.radar-notice.radar-error {
+  background: #3f1d1d;
+  color: #fecaca;
+}
+
+/* Leaflet's controls and popups are white boxes by default. */
+.radar .leaflet-bar a {
+  background: var(--radar-panel);
+  color: var(--radar-ink);
+  border-bottom-color: var(--radar-line);
+}
+
+.radar .leaflet-bar a:hover {
+  background: var(--radar-line);
+}
+
+.radar .leaflet-bar {
+  border-color: var(--radar-line);
+}
+
+.radar .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--radar-panel) 88%, transparent);
+  color: var(--radar-ink-dim);
+}
+
+.radar .leaflet-control-attribution a {
+  color: var(--radar-ink);
+}
+
+.radar .leaflet-popup-content-wrapper,
+.radar .leaflet-popup-tip {
+  background: var(--radar-panel);
+  color: var(--radar-ink);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.radar .leaflet-popup-content {
+  font: 12px/1.6 var(--mono);
+}
+
+.radar .leaflet-popup-close-button {
+  color: var(--radar-ink-dim);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -78,7 +364,8 @@ h1 {
   }
 
   .status .error,
-  .selection .error {
+  .selection .error,
+  .location .error {
     background: #3f1d1d;
     color: #fecaca;
   }

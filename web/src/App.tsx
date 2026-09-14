@@ -1,19 +1,34 @@
 import { useState } from "react";
-import { ShipMap } from "./components/ShipMap";
+import { LocationPicker } from "./components/LocationPicker";
+import { RadarMap } from "./components/RadarMap";
 import { usePositions } from "./hooks/usePositions";
 import { useHistory } from "./hooks/useHistory";
 import { useNow } from "./hooks/useNow";
+import { useRadarView } from "./hooks/useRadarView";
 import { hasPosition } from "./api/types";
+import { inRange, RADAR_RANGE_NM, type RadarCentre } from "./radar";
 import "./App.css";
 
 export default function App() {
   const { records, error, loading, lastUpdated } = usePositions(5000);
+  const { centre, setCentre, rangeNm, setRangeNm } = useRadarView();
+  const [picking, setPicking] = useState(false);
   const [selectedMmsi, setSelectedMmsi] = useState<number | null>(null);
   const track = useHistory(selectedMmsi);
   const now = useNow(10_000);
 
   const positioned = records.filter(hasPosition);
+  const visible = positioned.filter((record) => inRange(centre, record));
   const trackPoints = track.records.filter(hasPosition).length;
+
+  function moveTo(next: RadarCentre) {
+    // The range stays as it was, like a radar's range knob.
+    setCentre(next);
+    setPicking(false);
+    // A ship selected at the old location is almost never in range of the
+    // new one, and its track would be drawn off in empty space.
+    setSelectedMmsi(null);
+  }
 
   return (
     <div className="app">
@@ -25,17 +40,23 @@ export default function App() {
 
           {!loading && !error && (
             <span>
-              <strong>{positioned.length}</strong> ships
-              {positioned.length !== records.length &&
-                ` (${records.length - positioned.length} without a position)`}
+              <strong>{visible.length}</strong> ships within {RADAR_RANGE_NM} nm
+              {` (${positioned.length} tracked)`}
               {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
             </span>
           )}
 
-          {/* Kept visible alongside the map: the last good positions stay on
+          {/* Kept visible alongside the radar: the last good positions stay on
               screen, so without this a stalled API looks like calm seas. */}
           {error && <span className="error">{error}</span>}
         </div>
+
+        <LocationPicker
+          centre={centre}
+          onChange={moveTo}
+          picking={picking}
+          onPickingChange={setPicking}
+        />
 
         {selectedMmsi !== null && (
           <div className="selection">
@@ -52,12 +73,17 @@ export default function App() {
         )}
       </header>
 
-      <ShipMap
-        records={records}
+      <RadarMap
+        centre={centre}
+        rangeNm={rangeNm}
+        onRangeChange={setRangeNm}
+        records={visible}
         now={now}
         selectedMmsi={selectedMmsi}
         onSelect={setSelectedMmsi}
         track={track.records}
+        picking={picking}
+        onPick={(lat, lon) => moveTo({ lat, lon, name: null })}
       />
     </div>
   );
