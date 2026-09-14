@@ -5,7 +5,8 @@
 A real-time data pipeline in modern C++ that reads live AIS ship traffic from
 Kystverket's open TCP feed, decodes the binary NMEA payloads bit by bit, stores
 every position report in SQLite, and serves them over a small REST API. A React
-map on top shows the ships around Ålesund as they move.
+radar display on top shows the ships around any point on the Norwegian coast as
+they move.
 
 The map is the least interesting part. The point of the project is the plumbing
 underneath: decoding a binary protocol at the bit level, keeping a long-running
@@ -69,8 +70,12 @@ returns.
   and an SQLite writer using RAII wrappers around the C handles.
 - **REST API**: latest position per ship, ships inside a bounding box, and the
   history of one ship.
-- **Map**: live markers that fade when a ship goes quiet, and the recorded
-  track of a selected ship.
+- **Radar display**: fixed on a centre chosen by place-name search, a click on
+  the map or the device's position, with stepped ranges from 1 to 60 nm and
+  range rings that always fill the view the same way. Ships are arrows along
+  their heading, coloured by navigational status, faded when they go quiet;
+  selecting one draws its recorded track. The coastline is Kartverket's N250
+  data, pre-processed into tiles by `web/scripts/build-coastline.mjs`.
 - **Tests**: 35 GoogleTest cases covering the decoder, framer, queue, TCP
   client, writer and reader, including a fixture of 765 real lines captured
   from the live feed.
@@ -169,7 +174,7 @@ src/app/         kystverket_pipeline executable
 src/api_server/  api_server executable
 tests/           GoogleTest suite and the live-capture fixture
 third_party/     Vendored cpp-httplib (single header, not in pacman)
-web/             React + Leaflet map (Vite, TypeScript)
+web/             React + Leaflet radar display (Vite, TypeScript)
 ```
 
 ## Dependencies
@@ -179,15 +184,25 @@ web/             React + Leaflet map (Vite, TypeScript)
 - [nlohmann/json](https://github.com/nlohmann/json) for the API responses
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) v0.54.1, vendored under `third_party/` (MIT)
 - [GoogleTest](https://github.com/google/googletest) for the tests
-- [React](https://react.dev/), [Leaflet](https://leafletjs.com/) and [react-leaflet](https://react-leaflet.js.org/) for the map
+- [React](https://react.dev/), [Leaflet](https://leafletjs.com/) and [react-leaflet](https://react-leaflet.js.org/) for the radar display
+- [proj4js](https://github.com/proj4js/proj4js) to reproject the coastline data (build script only)
 
 ## Data and attribution
 
 AIS data comes from [Kystverket](https://www.kystverket.no/sjotransport-og-havn/ais/tilgang-pa-ais-data/)'s
 open feed, licensed under the Norwegian Licence for Open Government Data
 (NLOD). The test fixture under `tests/fixtures/` is a capture of that feed and
-is credited to Kystverket as their terms require. Map tiles are from
-[OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+is credited to Kystverket as their terms require.
+
+The coastline under `web/public/coastline/` is derived from
+[Kartverket](https://www.kartverket.no/)'s N250 Kartdata, © Kartverket,
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). It
+was reprojected to WGS84, simplified to 25 m and cut into 1° tiles; only the
+coastline (`Kystkontur`) is kept. The radar display credits Kartverket on
+screen wherever the coastline is shown.
+
+Place-name search uses Kartverket's [Stedsnavn API](https://ws.geonorge.no/stedsnavn/v1/),
+called from the browser.
 
 ## License
 
