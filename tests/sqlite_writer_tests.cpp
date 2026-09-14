@@ -63,6 +63,53 @@ TEST(SqliteWriterTest, BasicTest) {
     }
 }
 
+// More reports than the queue holds or one batch takes, pushed as fast as the
+// queue allows: every report must land, and within the burst the order must
+// survive batching -- each ship's latest position is the last one pushed.
+TEST(SqliteWriterTest, WritesABurstLargerThanOneBatchInOrder) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+
+    constexpr int ships = 300;
+    constexpr int reports = 1200;
+
+    ais::ThreadSafeQueue<ais::PositionReport> input(500);
+    std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
+        writer.run(input, stop_token);
+    });
+
+    for (int i = 0; i < reports; ++i) {
+        ais::PositionReport report;
+        report.mmsi = 100000000 + i % ships;
+        report.latitude = static_cast<double>(i);  // encodes the push order
+        report.longitude = 10.0;
+        input.push(report);
+    }
+    input.close();
+    writer_thread.join();
+
+    ais::PositionReader reader(db_path);
+    auto latest = reader.latest_positions();
+    ASSERT_EQ(latest.size(), static_cast<std::size_t>(ships));
+
+    for (const auto& record : latest) {
+        const int ship = static_cast<int>(record.report.mmsi - 100000000);
+        // The last report pushed for ship k was number (reports - ships + k).
+        EXPECT_EQ(record.report.latitude, static_cast<double>(reports - ships + ship))
+            << "ship " << record.report.mmsi;
+    }
+
+    sqlite3* db;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+    ais::SqliteConnection connection(db);
+    sqlite3_stmt* raw;
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT count(*) FROM position_reports", -1, &raw, nullptr), SQLITE_OK);
+    ais::SqliteStatement count(raw);
+    ASSERT_EQ(sqlite3_step(count.get()), SQLITE_ROW);
+    EXPECT_EQ(sqlite3_column_int(count.get(), 0), reports);
+}
+
 // A database written before latest_positions existed has history but no
 // latest table. Opening it with the writer must fill the table from that
 // history, once.

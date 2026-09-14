@@ -3,6 +3,9 @@
 #include "ais/concurrent_queue.hpp"
 #include "ais/position_report.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <stop_token>
 #include <sqlite3.h>
@@ -22,9 +25,18 @@ using SqliteStatement = std::unique_ptr<sqlite3_stmt, Sqlite3FinalizeDeleter>;
 
 class SqliteWriter {
 public:
+    /**
+     * Most reports written in one transaction. Bounds how long a single
+     * commit holds the write lock during a burst; matches the pipeline's
+     * queue capacity, so one batch can empty a full queue.
+     */
+    static constexpr std::size_t max_batch_size = 500;
+
     explicit SqliteWriter(std::string db_path);
     void run(ThreadSafeQueue<PositionReport>& input, std::stop_token stop_token);
 private:
+    void insert(const PositionReport& report, std::int64_t received_at);
+
     SqliteConnection connection_;
     SqliteStatement statement_;
 };
