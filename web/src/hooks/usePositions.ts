@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, fetchLatestPositions } from "../api/client";
+import { ApiError, fetchPositionsInArea, type BoundingBox } from "../api/client";
 import type { PositionRecord } from "../api/types";
 
 export interface PositionsState {
@@ -10,27 +10,38 @@ export interface PositionsState {
 }
 
 /**
- * Polls GET /positions.
+ * Polls GET /positions/area for the ships inside a box.
  *
  * Schedules the next request only after the previous one settles, rather than
  * using setInterval: a slow or stalled API would otherwise pile up overlapping
- * requests. A failed poll still schedules the next one, so the map recovers on
- * its own once the API comes back.
+ * requests. A failed poll still schedules the next one, so the radar recovers
+ * on its own once the API comes back.
+ *
+ * A new box -- the centre moved or the range changed -- aborts the request in
+ * flight and polls straight away, instead of waiting out the interval with
+ * ships from the old area on screen. Those stay displayed until the new
+ * answer lands; the caller filters to the ring anyway, so they are never
+ * drawn in the wrong place.
  */
-export function usePositions(intervalMs = 5000): PositionsState {
+export function usePositions(box: BoundingBox, intervalMs = 5000): PositionsState {
   const [records, setRecords] = useState<PositionRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // A new object with the same corners must not restart polling, so the
+  // effect is keyed on the values rather than the object.
+  const { minLat, maxLat, minLon, maxLon } = box;
+
   useEffect(() => {
+    const area = { minLat, maxLat, minLon, maxLon };
     const controller = new AbortController();
     let cancelled = false;
     let timer: number | undefined;
 
     async function poll() {
       try {
-        const data = await fetchLatestPositions(controller.signal);
+        const data = await fetchPositionsInArea(area, controller.signal);
         if (cancelled) return;
 
         setRecords(data);
@@ -61,7 +72,7 @@ export function usePositions(intervalMs = 5000): PositionsState {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [intervalMs]);
+  }, [minLat, maxLat, minLon, maxLon, intervalMs]);
 
   return { records, error, loading, lastUpdated };
 }

@@ -1,3 +1,4 @@
+import type { BoundingBox } from "./api/client";
 import { ageInSeconds, NavStatus, type PositionedRecord, type PositionRecord } from "./api/types";
 
 /** Where the radar sits. Every range, ring and filter is measured from here. */
@@ -18,13 +19,6 @@ export const DEFAULT_CENTRE: RadarCentre = { lat: 62.4722, lon: 6.1495, name: "Ã
 export const RADAR_RANGES_NM = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 40, 48, 60] as const;
 
 export const DEFAULT_RANGE_NM = 60;
-
-/**
- * Ships further than this from the centre are not drawn, whatever the range.
- * At a short range, ships between the outer ring and the screen edge still
- * show -- the view is a window onto the area, not a cut-out.
- */
-export const RADAR_RANGE_NM = 60;
 
 /** Rings drawn at every range, evenly spaced out to the range. */
 export const RING_COUNT = 4;
@@ -99,8 +93,36 @@ export function distanceNm(centre: RadarCentre, [lat, lon]: [number, number]): n
   return Math.hypot(dx, dy);
 }
 
-export function inRange(centre: RadarCentre, record: PositionedRecord): boolean {
-  return distanceNm(centre, [record.latitude, record.longitude]) <= RADAR_RANGE_NM;
+/** Whether a ship is inside the outer ring. */
+export function inRange(centre: RadarCentre, rangeNm: number, record: PositionedRecord): boolean {
+  return distanceNm(centre, [record.latitude, record.longitude]) <= rangeNm;
+}
+
+/**
+ * The smallest lat/lon box that contains the outer ring, for asking the API
+ * for only the ships that can be inside it. The API filters by box, not by
+ * circle, so the box's corners -- about a fifth of its area -- still come
+ * back and are dropped by inRange.
+ *
+ * Its east-west half-width uses the cosine at the ring's poleward edge rather
+ * than at the centre. A degree of longitude shrinks towards the pole, so the
+ * ring's widest point in degrees lies slightly poleward of the centre, and a
+ * box sized with the centre's cosine clips a sliver off each side. Every
+ * point of the ring is at most rangeNm east or west of the centre, at a
+ * latitude no further poleward than the edge, so the edge's cosine is a safe
+ * upper bound -- a little wide, never short.
+ */
+export function boundingBoxAround(centre: RadarCentre, rangeNm: number): BoundingBox {
+  const dLat = rangeNm / 60;
+  const poleward = Math.min(89, Math.abs(centre.lat) + dLat);
+  const dLon = rangeNm / (60 * cosDegrees(poleward));
+
+  return {
+    minLat: centre.lat - dLat,
+    maxLat: centre.lat + dLat,
+    minLon: centre.lon - dLon,
+    maxLon: centre.lon + dLon,
+  };
 }
 
 /** A point `nm` due north/east of the centre, for placing rings and labels. */

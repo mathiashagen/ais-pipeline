@@ -6,19 +6,25 @@ import { useHistory } from "./hooks/useHistory";
 import { useNow } from "./hooks/useNow";
 import { useRadarView } from "./hooks/useRadarView";
 import { hasPosition } from "./api/types";
-import { inRange, RADAR_RANGE_NM, type RadarCentre } from "./radar";
+import { boundingBoxAround, inRange, type RadarCentre } from "./radar";
 import "./App.css";
 
 export default function App() {
-  const { records, error, loading, lastUpdated } = usePositions(5000);
   const { centre, setCentre, rangeNm, setRangeNm } = useRadarView();
+  // Only the ships that can be inside the outer ring are fetched. The API
+  // takes a box, so the box's corners come back too and are filtered below.
+  const { records, error, loading, lastUpdated } = usePositions(
+    boundingBoxAround(centre, rangeNm),
+    5000,
+  );
   const [picking, setPicking] = useState(false);
   const [selectedMmsi, setSelectedMmsi] = useState<number | null>(null);
   const track = useHistory(selectedMmsi);
   const now = useNow(10_000);
 
-  const positioned = records.filter(hasPosition);
-  const visible = positioned.filter((record) => inRange(centre, record));
+  const visible = records
+    .filter(hasPosition)
+    .filter((record) => inRange(centre, rangeNm, record));
   const trackPoints = track.records.filter(hasPosition).length;
 
   function moveTo(next: RadarCentre) {
@@ -40,8 +46,7 @@ export default function App() {
 
           {!loading && !error && (
             <span>
-              <strong>{visible.length}</strong> ships within {RADAR_RANGE_NM} nm
-              {` (${positioned.length} tracked)`}
+              <strong>{visible.length}</strong> ships within {rangeNm} nm
               {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
             </span>
           )}
