@@ -45,14 +45,15 @@ PositionReader::PositionReader(std::string db_path) {
     }
     history_statement_ = SqliteStatement(history_stmt);
 
+    // Both read latest_positions, which SqliteWriter keeps at one row per ship
+    // with a trigger. It stays the size of the fleet however long the pipeline
+    // runs, where finding each ship's newest row in position_reports meant
+    // ranking the entire history on every request. Column order must match
+    // read_current_row, which reads by position.
     sqlite3_stmt* latest_positions_stmt = nullptr;
     const char* latest_positions_sql =
     "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at "
-    "FROM ("
-    "    SELECT *, ROW_NUMBER() OVER (PARTITION BY mmsi ORDER BY received_at DESC, rowid DESC) AS rn "
-    "    FROM position_reports "
-    ")"
-    "WHERE rn = 1"; 
+    "FROM latest_positions";
     if (sqlite3_prepare_v2(db, latest_positions_sql, -1, &latest_positions_stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }
@@ -61,12 +62,8 @@ PositionReader::PositionReader(std::string db_path) {
     sqlite3_stmt* positions_in_area_stmt = nullptr;
     const char* positions_in_area_sql =
     "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at "
-    "FROM ("
-    "    SELECT *, ROW_NUMBER() OVER (PARTITION BY mmsi ORDER BY received_at DESC, rowid DESC) AS rn "
-    "    FROM position_reports "
-    ")"
-    "WHERE rn = 1"
-    "   AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?";
+    "FROM latest_positions "
+    "WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?";
     if (sqlite3_prepare_v2(db, positions_in_area_sql, -1, &positions_in_area_stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }

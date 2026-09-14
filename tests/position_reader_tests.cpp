@@ -105,3 +105,68 @@ TEST(PositionReaderTests, PositionsInArea) {
     EXPECT_EQ(it_987654321->report.longitude, 20.5);
     EXPECT_EQ(it_987654321->report.latitude, 11.0);
 }
+
+// A report without a position must not take a ship off the radar: the latest
+// position stays the last one that had coordinates.
+TEST(PositionReaderTests, LatestPositionKeepsLastKnownPositionWhenReportHasNone) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+    ais::PositionReader reader(db_path);
+
+    sqlite3* seed_db;
+    sqlite3_open(db_path.c_str(), &seed_db);
+    char* err_msg = nullptr;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, sog, received_at) VALUES (111111111, 20.0, 10.0, 5.0, 1000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, sog, received_at) VALUES (111111111, NULL, NULL, 9.0, 2000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    sqlite3_close(seed_db);
+
+    auto latest = reader.latest_positions();
+    ASSERT_EQ(latest.size(), 1);
+    EXPECT_EQ(latest[0].report.latitude, 10.0);
+    EXPECT_EQ(latest[0].report.longitude, 20.0);
+    EXPECT_EQ(latest[0].report.sog, 5.0);
+    EXPECT_EQ(latest[0].received_at, 1000);
+}
+
+// Reports can reach the database out of order; an older one arriving last
+// must not replace a newer position.
+TEST(PositionReaderTests, LatestPositionIgnoresOlderReportArrivingLate) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+    ais::PositionReader reader(db_path);
+
+    sqlite3* seed_db;
+    sqlite3_open(db_path.c_str(), &seed_db);
+    char* err_msg = nullptr;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, received_at) VALUES (222222222, 20.0, 10.0, 5000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, received_at) VALUES (222222222, 21.0, 11.0, 3000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    sqlite3_close(seed_db);
+
+    auto latest = reader.latest_positions();
+    ASSERT_EQ(latest.size(), 1);
+    EXPECT_EQ(latest[0].report.latitude, 10.0);
+    EXPECT_EQ(latest[0].received_at, 5000);
+}
+
+// received_at has whole-second resolution, so a ship often reports twice in
+// the same second. The report stored last wins, as rowid order did before.
+TEST(PositionReaderTests, LatestPositionBreaksSameSecondTieByInsertOrder) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+    ais::PositionReader reader(db_path);
+
+    sqlite3* seed_db;
+    sqlite3_open(db_path.c_str(), &seed_db);
+    char* err_msg = nullptr;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, received_at) VALUES (333333333, 20.0, 10.0, 4000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, received_at) VALUES (333333333, 21.0, 11.0, 4000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    sqlite3_close(seed_db);
+
+    auto latest = reader.latest_positions();
+    ASSERT_EQ(latest.size(), 1);
+    EXPECT_EQ(latest[0].report.latitude, 11.0);
+    EXPECT_EQ(latest[0].report.longitude, 21.0);
+}

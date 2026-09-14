@@ -1,8 +1,10 @@
 #include "ais/sqlite_writer.hpp"
+#include "ais/position_reader.hpp"
 #include "ais/position_report.hpp"
 #include <gtest/gtest.h>
 #include <filesystem>
 #include "ais/concurrent_queue.hpp"
+#include <algorithm>
 #include <thread>
 
 TEST(SqliteWriterTest, BasicTest) {
@@ -59,4 +61,62 @@ TEST(SqliteWriterTest, BasicTest) {
 
         ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
     }
+}
+
+// A database written before latest_positions existed has history but no
+// latest table. Opening it with the writer must fill the table from that
+// history, once.
+TEST(SqliteWriterTest, BackfillsLatestPositionsFromExistingHistory) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+
+    {
+        sqlite3* db;
+        ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+        ais::SqliteConnection connection(db);
+        char* err_msg = nullptr;
+        const char* old_database = R"sql(
+            CREATE TABLE position_reports (mmsi INTEGER, latitude REAL, longitude REAL, sog REAL, cog REAL,
+                true_heading REAL, timestamp INTEGER, message_type INTEGER, nav_status INTEGER, received_at INTEGER);
+
+            -- Ship 1: two positions; the newer one is its latest.
+            INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (111111111, 10.0, 20.0, 1000);
+            INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (111111111, 11.0, 21.0, 2000);
+
+            -- Ship 2: its newest report has no position, so its latest is the
+            -- one before. Ranking all rows first and filtering afterwards would
+            -- lose this ship entirely.
+            INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (222222222, 12.0, 22.0, 1000);
+            INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (222222222, NULL, NULL, 3000);
+
+            -- Ship 3: never reported a position, so it has no latest position.
+            INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (333333333, NULL, NULL, 1000);
+        )sql";
+        ASSERT_EQ(sqlite3_exec(connection.get(), old_database, nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    }
+
+    // Twice: the second open must not backfill again and duplicate or reset rows.
+    { ais::SqliteWriter writer(db_path); }
+    ais::SqliteWriter writer(db_path);
+    ais::PositionReader reader(db_path);
+
+    auto latest = reader.latest_positions();
+    ASSERT_EQ(latest.size(), 2);
+
+    auto find = [&latest](std::uint32_t mmsi) {
+        return std::find_if(latest.begin(), latest.end(),
+            [mmsi](const ais::PositionRecord& r) { return r.report.mmsi == mmsi; });
+    };
+
+    auto ship1 = find(111111111);
+    ASSERT_NE(ship1, latest.end());
+    EXPECT_EQ(ship1->report.latitude, 11.0);
+    EXPECT_EQ(ship1->received_at, 2000);
+
+    auto ship2 = find(222222222);
+    ASSERT_NE(ship2, latest.end());
+    EXPECT_EQ(ship2->report.latitude, 12.0);
+    EXPECT_EQ(ship2->received_at, 1000);
+
+    EXPECT_EQ(find(333333333), latest.end());
 }
