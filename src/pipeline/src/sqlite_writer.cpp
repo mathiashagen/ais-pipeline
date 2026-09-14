@@ -36,6 +36,13 @@ SqliteWriter::SqliteWriter(std::string db_path) {
         throw std::runtime_error(sqlite3_errmsg(connection_.get()));
     }
 
+    const char* index_sql = 
+        "CREATE INDEX IF NOT EXISTS "
+        "position_reports_mmsi_received_at_idx ON position_reports (mmsi, received_at);";
+    if (sqlite3_exec(connection_.get(), index_sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+
     sqlite3_stmt* stmt = nullptr;
     const char* insert_sql = 
         "INSERT INTO position_reports (mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
