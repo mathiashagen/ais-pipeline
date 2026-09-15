@@ -10,6 +10,9 @@ namespace ais {
 
 namespace {
 
+template <class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+
 void exec(sqlite3* db, const char* sql) {
     if (sqlite3_exec(db, sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
@@ -238,9 +241,9 @@ SqliteWriter::SqliteWriter(std::string db_path) {
 // and an exception escaping a std::jthread's function calls std::terminate --
 // the process stops, as it did before batching. Unlike an unobserved exception
 // in a C# Task, it cannot be silently lost.
-void SqliteWriter::run(ThreadSafeQueue<PositionReport>& input, std::stop_token stop_token) {
+void SqliteWriter::run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_token) {
     while (!stop_token.stop_requested()) {
-        std::vector<PositionReport> batch = input.pop_batch(max_batch_size);
+        std::vector<AisMessage> batch = input.pop_batch(max_batch_size);
         if (batch.empty()) {
             break;  // closed and drained: the last reports were committed already
         }
@@ -252,8 +255,11 @@ void SqliteWriter::run(ThreadSafeQueue<PositionReport>& input, std::stop_token s
             std::chrono::system_clock::now().time_since_epoch()).count();
 
         Transaction transaction(connection_.get());
-        for (const PositionReport& report : batch) {
-            insert(report, received_at);
+        for (const AisMessage& message : batch) {
+            std::visit(overloaded{
+                [&](const PositionReport& report) { insert(report, received_at); },
+                [&](const StaticVoyageData&)      { /* stored in step D */ },
+            }, message);
         }
         transaction.commit();
     }

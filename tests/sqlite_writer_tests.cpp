@@ -24,7 +24,7 @@ TEST(SqliteWriterTest, BasicTest) {
     report.message_type = 1;
     report.nav_status = ais::NavStatus::UnderWayEngine;
 
-    ais::ThreadSafeQueue<ais::PositionReport> input(500);
+    ais::ThreadSafeQueue<ais::AisMessage> input(500);
     std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
         writer.run(input, stop_token);
     });
@@ -74,7 +74,7 @@ TEST(SqliteWriterTest, WritesABurstLargerThanOneBatchInOrder) {
     constexpr int ships = 300;
     constexpr int reports = 1200;
 
-    ais::ThreadSafeQueue<ais::PositionReport> input(500);
+    ais::ThreadSafeQueue<ais::AisMessage> input(500);
     std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
         writer.run(input, stop_token);
     });
@@ -166,4 +166,64 @@ TEST(SqliteWriterTest, BackfillsLatestPositionsFromExistingHistory) {
     EXPECT_EQ(ship2->received_at, 1000);
 
     EXPECT_EQ(find(333333333), latest.end());
+}
+
+TEST(SqliteWriterTest, MixedBatchTest) {
+    // Create a temporary SQLite database in memory
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+
+    ais::PositionReport report;
+    report.mmsi = 123456789;
+    report.latitude = 37.7749;
+    report.longitude = -122.4194;
+    report.sog = 12.5;
+    report.cog = 85.0;
+    report.true_heading = 90;
+    report.timestamp = 18;
+    report.message_type = 1;
+    report.nav_status = ais::NavStatus::UnderWayEngine;
+
+    ais::StaticVoyageData static_data;
+    static_data.mmsi = 123456789;
+    static_data.name = "EVER DIADEM";
+
+    ais::PositionReport report2;
+    report2.mmsi = 987654321;
+    report2.latitude = 40.7128;
+    report2.longitude = -74.0060;
+    report2.sog = 10.0;
+    report2.cog = 90.0;
+    report2.true_heading = 85;
+    report2.timestamp = 20;
+    report2.message_type = 1;
+    report2.nav_status = ais::NavStatus::UnderWayEngine;
+
+    ais::ThreadSafeQueue<ais::AisMessage> input(500);
+    input.push(report);
+    input.push(static_data);
+    input.push(report2);
+    std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
+        writer.run(input, stop_token);
+    });
+
+    // Stop the writer thread
+    input.close();
+    writer_thread.join();
+
+    {
+        sqlite3* db;
+        ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+        ais::SqliteConnection connection = ais::SqliteConnection(db);
+
+        sqlite3_stmt* stmt;
+        ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT count(*) FROM position_reports", -1, &stmt, nullptr), SQLITE_OK);
+
+        ais::SqliteStatement statement = ais::SqliteStatement(stmt);
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_ROW);
+        EXPECT_EQ(sqlite3_column_int(statement.get(), 0), 2);
+
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
+    }
 }

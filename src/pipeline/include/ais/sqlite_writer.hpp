@@ -2,6 +2,8 @@
 
 #include "ais/concurrent_queue.hpp"
 #include "ais/position_report.hpp"
+#include "ais/ais_message.hpp"
+
 
 #include <cstddef>
 #include <cstdint>
@@ -33,7 +35,7 @@ public:
     static constexpr std::size_t max_batch_size = 500;
 
     explicit SqliteWriter(std::string db_path);
-    void run(ThreadSafeQueue<PositionReport>& input, std::stop_token stop_token);
+    void run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_token);
 private:
     void insert(const PositionReport& report, std::int64_t received_at);
 

@@ -8,7 +8,7 @@
 #include <algorithm>
 
 #include "ais/concurrent_queue.hpp"
-#include "ais/position_report.hpp"
+#include "ais/ais_message.hpp"
 #include "ais/tcp_client.hpp"
 #include "ais/decoder_stage.hpp"
 #include "ais/sqlite_writer.hpp"
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, handle_sigint);
 
     ais::ThreadSafeQueue<std::string> queue1(500);
-    ais::ThreadSafeQueue<ais::PositionReport> queue2(500);
+    ais::ThreadSafeQueue<ais::AisMessage> queue2(500);
 
     ais::TcpClient client(config.host, config.port);
     ais::DecoderStage decoder;
