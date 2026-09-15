@@ -225,5 +225,63 @@ TEST(SqliteWriterTest, MixedBatchTest) {
         EXPECT_EQ(sqlite3_column_int(statement.get(), 0), 2);
 
         ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
+
+        ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT count(*) FROM ship_static", -1, &stmt, nullptr), SQLITE_OK);
+
+        statement = ais::SqliteStatement(stmt);
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_ROW);
+        EXPECT_EQ(sqlite3_column_int(statement.get(), 0), 1);
+
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
+    }
+}
+
+TEST(SqliteWriterTest, BasicShipStaticVoyageDataTest) {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    ais::SqliteWriter writer(db_path);
+
+    ais::StaticVoyageData static_data;
+    static_data.mmsi = 123456789;
+    static_data.name = "EVER DIADEM";
+    static_data.draught = 12.2;
+    static_data.destination = "OSLO";
+
+    ais::StaticVoyageData static_data2;
+    static_data2.mmsi = 123456789;
+    static_data2.name = "EVER DIADEM";
+    static_data2.draught = 12.2;
+    static_data2.destination = "TRONDHEIM";
+
+    ais::ThreadSafeQueue<ais::AisMessage> input(500);
+    input.push(static_data);
+    input.push(static_data2);
+    std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
+        writer.run(input, stop_token);
+    });
+
+    // Stop the writer thread
+    input.close();
+    writer_thread.join();
+
+    {
+        sqlite3* db;
+        ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+        ais::SqliteConnection connection = ais::SqliteConnection(db);
+
+        sqlite3_stmt* stmt;
+        ASSERT_EQ(sqlite3_prepare_v2(connection.get(), "SELECT mmsi, name, draught, imo, destination, call_sign, eta_hour FROM ship_static", -1, &stmt, nullptr), SQLITE_OK);
+
+        ais::SqliteStatement statement = ais::SqliteStatement(stmt);
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_ROW);
+        EXPECT_EQ(sqlite3_column_int(statement.get(), 0), 123456789);
+        EXPECT_STREQ(reinterpret_cast<const char*>(sqlite3_column_text(statement.get(), 1)), "EVER DIADEM");
+        EXPECT_DOUBLE_EQ(sqlite3_column_double(statement.get(), 2), 12.2);  // draught set to 12.2
+        EXPECT_EQ(sqlite3_column_type(statement.get(), 3), SQLITE_NULL);  // imo default
+        EXPECT_STREQ(reinterpret_cast<const char*>(sqlite3_column_text(statement.get(), 4)), "TRONDHEIM");  // destination set to "TRONDHEIM"
+        EXPECT_EQ(sqlite3_column_type(statement.get(), 5), SQLITE_NULL);  // call_sign default
+        EXPECT_EQ(sqlite3_column_type(statement.get(), 6), SQLITE_NULL);  // eta_hour default
+
+        ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
     }
 }

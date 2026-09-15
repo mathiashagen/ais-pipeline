@@ -3,6 +3,7 @@
 #include "ais/concurrent_queue.hpp"
 #include "ais/position_report.hpp"
 #include "ais/ais_message.hpp"
+#include "ais/static_voyage_data.hpp"
 
 
 #include <cstddef>
@@ -38,9 +39,11 @@ public:
     void run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_token);
 private:
     void insert(const PositionReport& report, std::int64_t received_at);
+    void upsert(const StaticVoyageData& static_data, std::int64_t received_at);
 
     SqliteConnection connection_;
     SqliteStatement statement_;
+    SqliteStatement static_statement_;
 };
 
 }

@@ -70,6 +70,30 @@ void bind_optional(sqlite3_stmt* stmt, int index, const std::optional<int>& valu
     }
 }
 
+void bind_optional(sqlite3_stmt* stmt, int index, const std::optional<std::uint8_t>& value) {
+    if (value.has_value()) {
+        sqlite3_bind_int(stmt, index, *value);
+    } else {
+        sqlite3_bind_null(stmt, index);
+    }
+}
+
+void bind_optional(sqlite3_stmt* stmt, int index, const std::optional<std::uint32_t>& value) {
+    if (value.has_value()) {
+        sqlite3_bind_int(stmt, index, *value);
+    } else {
+        sqlite3_bind_null(stmt, index);
+    }
+}
+
+void bind_text(sqlite3_stmt* stmt, int index, const std::string& value) {
+    if (value.empty()) {
+        sqlite3_bind_null(stmt, index);
+    } else {
+        sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_STATIC);
+    }
+}
+
 // Runs a query returning a single 0/1 column, such as SELECT EXISTS (...).
 bool has_rows(sqlite3* db, const char* exists_query) {
     sqlite3_stmt* raw = nullptr;
@@ -191,7 +215,13 @@ SqliteWriter::SqliteWriter(std::string db_path) {
 
     const char* sql = 
         "CREATE TABLE IF NOT EXISTS "
-        "position_reports (mmsi INTEGER, latitude REAL, longitude REAL, sog REAL, cog REAL, true_heading REAL, timestamp INTEGER, message_type INTEGER, nav_status INTEGER, received_at INTEGER); ";
+        "position_reports (mmsi INTEGER, latitude REAL, longitude REAL, sog REAL, cog REAL, true_heading REAL, timestamp INTEGER, message_type INTEGER, nav_status INTEGER, received_at INTEGER); "
+        "CREATE TABLE IF NOT EXISTS ship_static ("
+        "mmsi INTEGER PRIMARY KEY,"
+        "imo INTEGER, call_sign TEXT, name TEXT, ship_type INTEGER,"
+        "to_bow INTEGER, to_stern INTEGER, to_port INTEGER, to_starboard INTEGER,"
+        "eta_month INTEGER, eta_day INTEGER, eta_hour INTEGER, eta_minute INTEGER,"
+        "draught REAL, destination TEXT, received_at INTEGER);";
 
     if (sqlite3_exec(connection_.get(), sql, nullptr, nullptr, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(connection_.get()));
@@ -226,6 +256,17 @@ SqliteWriter::SqliteWriter(std::string db_path) {
         throw std::runtime_error(sqlite3_errmsg(connection_.get()));
     }
     statement_ = SqliteStatement(stmt);
+
+    stmt = nullptr;
+    const char* static_insert_sql =
+        "INSERT INTO ship_static (mmsi, imo, call_sign, name, ship_type, to_bow, to_stern, to_port, to_starboard, eta_month, eta_day, eta_hour, eta_minute, draught, destination, received_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT (mmsi) DO UPDATE SET imo = excluded.imo, call_sign = excluded.call_sign, name = excluded.name, ship_type = excluded.ship_type, to_bow = excluded.to_bow, to_stern = excluded.to_stern, to_port = excluded.to_port, to_starboard = excluded.to_starboard, eta_month = excluded.eta_month, eta_day = excluded.eta_day, eta_hour = excluded.eta_hour, eta_minute = excluded.eta_minute, draught = excluded.draught, destination = excluded.destination, received_at = excluded.received_at "
+        "WHERE excluded.received_at >= ship_static.received_at;";
+    if (sqlite3_prepare_v2(connection_.get(), static_insert_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+    static_statement_ = SqliteStatement(stmt);
 }
 
 // Writes whatever has queued up since the last commit as one transaction.
@@ -258,7 +299,7 @@ void SqliteWriter::run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_
         for (const AisMessage& message : batch) {
             std::visit(overloaded{
                 [&](const PositionReport& report) { insert(report, received_at); },
-                [&](const StaticVoyageData&)      { /* stored in step D */ },
+                [&](const StaticVoyageData& static_data) { upsert(static_data, received_at); },
             }, message);
         }
         transaction.commit();
@@ -284,6 +325,34 @@ void SqliteWriter::insert(const PositionReport& report, std::int64_t received_at
     const std::string error = result == SQLITE_DONE ? std::string() : sqlite3_errmsg(connection_.get());
     // Reset straight away rather than before the next use, so the statement
     // never outlives its work -- the same reason the WAL check is scoped.
+    sqlite3_reset(stmt);
+    if (result != SQLITE_DONE) {
+        throw std::runtime_error(error);
+    }
+}
+
+void SqliteWriter::upsert(const StaticVoyageData& static_data, std::int64_t received_at) {
+    sqlite3_stmt* stmt = static_statement_.get();
+
+    sqlite3_bind_int(stmt, 1, static_data.mmsi);
+    bind_optional(stmt, 2, static_data.imo);
+    bind_text(stmt, 3, static_data.call_sign);
+    bind_text(stmt, 4, static_data.name);
+    sqlite3_bind_int(stmt, 5, static_data.ship_type);
+    sqlite3_bind_int(stmt, 6, static_data.to_bow);
+    sqlite3_bind_int(stmt, 7, static_data.to_stern);
+    sqlite3_bind_int(stmt, 8, static_data.to_port);
+    sqlite3_bind_int(stmt, 9, static_data.to_starboard);
+    bind_optional(stmt, 10, static_data.eta_month);
+    bind_optional(stmt, 11, static_data.eta_day);
+    bind_optional(stmt, 12, static_data.eta_hour);
+    bind_optional(stmt, 13, static_data.eta_minute);
+    bind_optional(stmt, 14, static_data.draught);
+    bind_text(stmt, 15, static_data.destination);
+    sqlite3_bind_int64(stmt, 16, received_at);
+
+    const int result = sqlite3_step(stmt);
+    const std::string error = result == SQLITE_DONE ? std::string() : sqlite3_errmsg(connection_.get());
     sqlite3_reset(stmt);
     if (result != SQLITE_DONE) {
         throw std::runtime_error(error);
