@@ -19,6 +19,12 @@ std::optional<AisMessage> decode_message(const Payload& payload) {
             return std::move(*report);
         }
     }
+    if (type == 18) {
+        auto report = decode_class_b_position_report(payload);
+        if (report) {
+            return *report;
+        }
+    }
     return std::nullopt;
 }
 

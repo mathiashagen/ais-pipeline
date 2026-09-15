@@ -14,6 +14,7 @@ add_executable(all_tests
     position_record_tests.cpp
     static_voyage_data_tests.cpp
     ais_message_tests.cpp
+    class_b_position_report_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE

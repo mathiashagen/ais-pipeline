@@ -22,7 +22,7 @@ TEST(AisMessageTests, Type5Payload) {
 }
 
 TEST(AisMessageTests, UnsupportedType) {
-    ais::Payload payload("B" + std::string(27, '0'), 0);
+    ais::Payload payload("4" + std::string(27, '0'), 0);
     auto result = ais::decode_message(payload);
     ASSERT_FALSE(result.has_value());
 }
@@ -32,4 +32,14 @@ TEST(AisMessageTests, TruncatedMessage) {
     auto result = ais::decode_message(payload);
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(payload.bit_count(), 162u);
+}
+
+TEST(AisMessageTests, Type18Payload) {
+    ais::Payload payload(
+    "B52K>;h00Fc>jpUlNV@ikwpUoP06", 0);
+    auto result = ais::decode_message(payload);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(std::holds_alternative<ais::PositionReport>(*result));
+    EXPECT_EQ(std::get<ais::PositionReport>(*result).mmsi, 338087471);
+    EXPECT_EQ(std::get<ais::PositionReport>(*result).message_type, 18);
 }

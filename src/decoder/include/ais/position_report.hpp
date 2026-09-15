@@ -45,5 +45,6 @@ public:
 };
 
 std::optional<PositionReport> decode_position_report(const Payload& payload);
+std::optional<PositionReport> decode_class_b_position_report(const Payload& payload);
 
 }  // namespace ais
