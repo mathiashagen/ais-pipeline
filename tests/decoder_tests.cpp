@@ -67,6 +67,52 @@ TEST(Payload, SignedInt) {
     EXPECT_EQ(payload.get_int(89, 27), 22681271);    // latitude field, positive
 }
 
+TEST(Payload, GetText) {
+    ais::Payload payload(
+    "55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8"
+    "88888888880", 2);
+    EXPECT_EQ(payload.get_text(70, 42), "3FOF8");
+    EXPECT_EQ(payload.get_text(112, 120), "EVER DIADEM");
+    EXPECT_EQ(payload.get_text(302, 120), "NEW YORK");
+    EXPECT_THROW(payload.get_text(0, 10), std::invalid_argument);   // length not multiple of 6
+}
+
+TEST(Payload, GetTextStopsAtFirstAt) {
+    ais::Payload payload("120", 0);
+    EXPECT_EQ(payload.get_text(0, 18), "AB");
+    EXPECT_THROW(payload.get_text(12, 12), std::out_of_range);
+}
+
+TEST(Payload, GetTextTrimsTrailingSpaces) {
+    ais::Payload payload("12PP", 0);
+    EXPECT_EQ(payload.get_text(0, 24), "AB");
+}
+
+TEST(Payload, GetTextAllAtIsEmpty) {
+    ais::Payload payload("000", 0);
+    EXPECT_EQ(payload.get_text(0, 18), "");
+}
+
+TEST(Payload, GetTextIgnoresTextAfterAt) {
+    ais::Payload payload("1021", 0);
+    EXPECT_EQ(payload.get_text(0, 24), "A");
+}
+
+TEST(Payload, GetTextKeepsLeadingSpaces) {
+    ais::Payload payload("P1P", 0);
+    EXPECT_EQ(payload.get_text(0, 18), " A");
+}
+
+TEST(Payload, GetTextAllSpacesIsEmpty) {
+    ais::Payload payload("PPP", 0);
+    EXPECT_EQ(payload.get_text(0, 18), "");
+}
+
+TEST(Payload, GetTextDecodesUnderscore) {
+    ais::Payload payload("O", 0);
+    EXPECT_EQ(payload.get_text(0, 6), "_");
+}
+
 TEST(PositionReport, DecodesValidMessage) {
     const char* payloadStr = "15M67FC000G?ufbE`FepT@3n00Sa";
     ais::Payload payload(payloadStr, 0);

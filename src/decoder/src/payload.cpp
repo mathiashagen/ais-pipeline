@@ -1,8 +1,13 @@
 #include "ais/payload.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <string_view>
 
 namespace ais {
+namespace {
+    constexpr std::string_view sixbit_text_alphabet = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_ !\"#$%&'()*+,-./0123456789:;<=>?";
+    static_assert(sixbit_text_alphabet.size() == 64);
+}
 
 Payload::Payload(std::string_view armored, int fill_bits) {
     // 1. reserve space for armored.size() * 6 bits
@@ -22,6 +27,31 @@ Payload::Payload(std::string_view armored, int fill_bits) {
     if (fill_bits > 5) fill_bits = 5;
     const std::size_t drop = std::min(static_cast<std::size_t>(fill_bits), bits_.size());
     bits_.resize(bits_.size() - drop);
+}
+
+std::string Payload::get_text(std::size_t start, std::size_t length) const {
+    if (length % 6 != 0) {
+        throw std::invalid_argument("Payload::get_text: length must be a multiple of 6");
+    }
+    if (start > bit_count() || length > bit_count() - start) {
+        throw std::out_of_range("Payload::get_text: start/length out of range");
+    }
+
+    std::string result;
+    result.reserve(length / 6);
+    for (std::size_t i = 0; i < length; i += 6) {
+        const auto value = get_uint(start + i, 6);
+        const char c = sixbit_text_alphabet[value];
+        if (c == '@') break;
+        result.push_back(c);
+    }
+    const std::size_t last_non_space = result.find_last_not_of(' ');
+    if (last_non_space != std::string::npos) {
+        result.erase(last_non_space + 1);
+    } else {
+        result.clear();
+    }
+    return result;
 }
 
 std::uint64_t Payload::get_uint(std::size_t start, std::size_t length) const {
