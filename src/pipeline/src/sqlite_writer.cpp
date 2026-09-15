@@ -300,6 +300,8 @@ void SqliteWriter::run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_
             std::visit(overloaded{
                 [&](const PositionReport& report) { insert(report, received_at); },
                 [&](const StaticVoyageData& static_data) { upsert(static_data, received_at); },
+                [&](const StaticDataPartA& static_data_a) {  },
+                [&](const StaticDataPartB& static_data_b) {  },
             }, message);
         }
         transaction.commit();

@@ -43,3 +43,28 @@ TEST(AisMessageTests, Type18Payload) {
     EXPECT_EQ(std::get<ais::PositionReport>(*result).mmsi, 338087471);
     EXPECT_EQ(std::get<ais::PositionReport>(*result).message_type, 18);
 }
+
+TEST(AisMessageTests, Type24PayloadPartA) {
+    ais::Payload payload(
+    "H8gQi1@HU<PTpN0pEB08uEV3620", 2);
+    auto result = ais::decode_message(payload);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(std::holds_alternative<ais::StaticDataPartA>(*result));
+    EXPECT_EQ(std::get<ais::StaticDataPartA>(*result).mmsi, 586707205);
+    EXPECT_EQ(std::get<ais::StaticDataPartA>(*result).name, "FISHING NET BOUY 1");
+}
+
+TEST(AisMessageTests, Type24PayloadPartB) {
+    ais::Payload payload(
+    "H3n4DU4tC=D6aVJ<;popn0186230", 0);
+    auto result = ais::decode_message(payload);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(std::holds_alternative<ais::StaticDataPartB>(*result));
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).mmsi, 258020500);
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).ship_type, 60);
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).call_sign, "LK8786");
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).to_bow, 9);
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).to_stern, 6);
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).to_port, 2);
+    EXPECT_EQ(std::get<ais::StaticDataPartB>(*result).to_starboard, 3);
+}

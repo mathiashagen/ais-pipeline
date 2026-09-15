@@ -25,6 +25,16 @@ std::optional<AisMessage> decode_message(const Payload& payload) {
             return *report;
         }
     }
+    if (type == 24) {
+        auto part_a = decode_static_data_part_a(payload);
+        if (part_a) {
+            return std::move(*part_a);
+        }
+        auto part_b = decode_static_data_part_b(payload);
+        if (part_b) {
+            return std::move(*part_b);
+        }
+    }
     return std::nullopt;
 }
 
