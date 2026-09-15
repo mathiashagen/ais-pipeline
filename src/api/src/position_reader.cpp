@@ -52,8 +52,9 @@ PositionReader::PositionReader(std::string db_path) {
     // read_current_row, which reads by position.
     sqlite3_stmt* latest_positions_stmt = nullptr;
     const char* latest_positions_sql =
-    "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at "
-    "FROM latest_positions";
+    "SELECT lp.mmsi, lp.latitude, lp.longitude, lp.sog, lp.cog, lp.true_heading, lp.timestamp, lp.message_type, lp.nav_status, lp.received_at, ss.name, ss.call_sign, ss.destination, ss.ship_type "
+    "FROM latest_positions AS lp "
+    "LEFT JOIN ship_static AS ss ON lp.mmsi = ss.mmsi";
     if (sqlite3_prepare_v2(db, latest_positions_sql, -1, &latest_positions_stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }
@@ -61,9 +62,10 @@ PositionReader::PositionReader(std::string db_path) {
 
     sqlite3_stmt* positions_in_area_stmt = nullptr;
     const char* positions_in_area_sql =
-    "SELECT mmsi, latitude, longitude, sog, cog, true_heading, timestamp, message_type, nav_status, received_at "
-    "FROM latest_positions "
-    "WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?";
+    "SELECT lp.mmsi, lp.latitude, lp.longitude, lp.sog, lp.cog, lp.true_heading, lp.timestamp, lp.message_type, lp.nav_status, lp.received_at, ss.name, ss.call_sign, ss.destination, ss.ship_type "
+    "FROM latest_positions AS lp "
+    "LEFT JOIN ship_static AS ss ON lp.mmsi = ss.mmsi "
+    "WHERE lp.latitude BETWEEN ? AND ? AND lp.longitude BETWEEN ? AND ?";
     if (sqlite3_prepare_v2(db, positions_in_area_sql, -1, &positions_in_area_stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error(sqlite3_errmsg(db));
     }
@@ -148,6 +150,30 @@ PositionRecord PositionReader::read_current_row(sqlite3_stmt* stmt) {
     record.report.message_type = sqlite3_column_int(stmt, 7);
     record.report.nav_status = static_cast<NavStatus>(sqlite3_column_int(stmt, 8));
     record.received_at = sqlite3_column_int64(stmt, 9);
+
+    if (sqlite3_column_count(stmt) > 10) {
+        if (sqlite3_column_type(stmt, 10) == SQLITE_NULL) {
+            record.name = std::nullopt;
+        } else {
+            record.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+        }
+        if (sqlite3_column_type(stmt, 11) == SQLITE_NULL) {
+            record.call_sign = std::nullopt;
+        } else {
+            record.call_sign = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+        }
+        if (sqlite3_column_type(stmt, 12) == SQLITE_NULL) {
+            record.destination = std::nullopt;
+        } else {
+            record.destination = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
+        }
+        if (sqlite3_column_type(stmt, 13) == SQLITE_NULL) {
+            record.ship_type = std::nullopt;
+        } else {
+            record.ship_type = sqlite3_column_int(stmt, 13);
+        }
+    }
+
     return record;
 }
 }

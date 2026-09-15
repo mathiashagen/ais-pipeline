@@ -34,6 +34,7 @@ TEST(PositionReaderTests, History) {
     EXPECT_EQ(history[1].report.true_heading, 100);
     EXPECT_EQ(history[0].received_at, 4000);
     EXPECT_EQ(history[1].received_at, 2000);
+    EXPECT_EQ(history[1].name, std::nullopt);
 }
 
 auto find_by_mmsi = [](const std::vector<ais::PositionRecord>& records, std::uint32_t mmsi) {
@@ -55,6 +56,7 @@ TEST(PositionReaderTests, LatestPositions) {
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (123456789, 21.0, 11.0, 110.0, 100, 4000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (987654321, 22.0, 12.0, 120.0, 110, 3000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (123456789, 23.0, 11.0, 110.0, 100, 4000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO ship_static (mmsi, name, call_sign, destination, ship_type, received_at) VALUES (123456789, 'ShipName', 'CallSign', 'Destination', 1, 3500);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     sqlite3_close(seed_db);
 
     auto latest_positions = reader.latest_positions();
@@ -67,6 +69,10 @@ TEST(PositionReaderTests, LatestPositions) {
     EXPECT_EQ(it_123456789->report.cog, 110.0);
     EXPECT_EQ(it_123456789->report.true_heading, 100);
     EXPECT_EQ(it_123456789->received_at, 4000);
+    EXPECT_EQ(it_123456789->name, "ShipName");
+    EXPECT_EQ(it_123456789->call_sign, "CallSign");
+    EXPECT_EQ(it_123456789->destination, "Destination");
+    EXPECT_EQ(it_123456789->ship_type, 1);
 
     auto it_987654321 = find_by_mmsi(latest_positions, 987654321);
     ASSERT_NE(it_987654321, latest_positions.end());
@@ -76,6 +82,10 @@ TEST(PositionReaderTests, LatestPositions) {
     EXPECT_EQ(it_987654321->report.cog, 120.0);
     EXPECT_EQ(it_987654321->report.true_heading, 110);
     EXPECT_EQ(it_987654321->received_at, 3000);
+    EXPECT_EQ(it_987654321->name, std::nullopt);
+    EXPECT_EQ(it_987654321->call_sign, std::nullopt);
+    EXPECT_EQ(it_987654321->destination, std::nullopt);
+    EXPECT_EQ(it_987654321->ship_type, std::nullopt);
 }
 
 TEST(PositionReaderTests, PositionsInArea) {
@@ -91,6 +101,7 @@ TEST(PositionReaderTests, PositionsInArea) {
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (123456789, 25.0, 15.0, 110.0, 100, 4000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (987654321, 26.0, 16.0, 120.0, 110, 5000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO position_reports (mmsi, longitude, latitude, cog, true_heading, received_at) VALUES (987654321, 20.5, 11.0, 110.0, 100, 7000);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
+    ASSERT_EQ(sqlite3_exec(seed_db, "INSERT INTO ship_static (mmsi, name, call_sign, destination, ship_type, received_at) VALUES (987654321, 'ShipName', 'CallSign', 'Destination', 1, 3500);", nullptr, nullptr, &err_msg), SQLITE_OK) << err_msg;
     sqlite3_close(seed_db);
 
     ais::BoundingBox box{10.0, 12.0, 20.0, 22.0};
@@ -104,6 +115,11 @@ TEST(PositionReaderTests, PositionsInArea) {
     EXPECT_EQ(it_987654321->report.mmsi, 987654321);
     EXPECT_EQ(it_987654321->report.longitude, 20.5);
     EXPECT_EQ(it_987654321->report.latitude, 11.0);
+    EXPECT_EQ(it_987654321->received_at, 7000);
+    EXPECT_EQ(it_987654321->name, "ShipName");
+    EXPECT_EQ(it_987654321->call_sign, "CallSign");
+    EXPECT_EQ(it_987654321->destination, "Destination");
+    EXPECT_EQ(it_987654321->ship_type, 1);
 }
 
 // A report without a position must not take a ship off the radar: the latest

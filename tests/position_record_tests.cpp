@@ -10,6 +10,9 @@ TEST(PositionRecordTest, ToJson) {
     record.report.nav_status = ais::NavStatus::UnderWayEngine;
     record.report.true_heading = 90;
     record.received_at = 1617181930;
+    record.name = "ShipName";
+    record.call_sign = "CallSign";
+    record.ship_type = 1;
 
     nlohmann::json j = record;
     EXPECT_EQ(j["mmsi"], 123456789);
@@ -21,4 +24,8 @@ TEST(PositionRecordTest, ToJson) {
     EXPECT_TRUE(j["cog"].is_null());
     EXPECT_EQ(j["true_heading"], 90);
     EXPECT_EQ(j["received_at"], 1617181930);
+    EXPECT_EQ(j["name"], "ShipName");
+    EXPECT_EQ(j["call_sign"], "CallSign");
+    EXPECT_TRUE(j["destination"].is_null());
+    EXPECT_EQ(j["ship_type"], 1);
 }
