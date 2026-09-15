@@ -5,7 +5,10 @@
 #include <filesystem>
 #include "ais/concurrent_queue.hpp"
 #include <algorithm>
+#include <optional>
+#include <string>
 #include <thread>
+#include <vector>
 
 TEST(SqliteWriterTest, BasicTest) {
     // Create a temporary SQLite database in memory
@@ -284,4 +287,149 @@ TEST(SqliteWriterTest, BasicShipStaticVoyageDataTest) {
 
         ASSERT_EQ(sqlite3_step(statement.get()), SQLITE_DONE);
     }
+}
+
+namespace {
+
+// Runs a writer over messages queued before it starts, so they all land in
+// one batch and one transaction, in the order given.
+void write_messages(const std::string& db_path, const std::vector<ais::AisMessage>& messages) {
+    ais::SqliteWriter writer(db_path);
+    ais::ThreadSafeQueue<ais::AisMessage> input(500);
+    for (const ais::AisMessage& message : messages) {
+        input.push(message);
+    }
+    std::jthread writer_thread([&writer, &input](std::stop_token stop_token) {
+        writer.run(input, stop_token);
+    });
+    input.close();
+    writer_thread.join();
+}
+
+struct ShipStaticRow {
+    std::optional<std::string> name;
+    std::optional<std::string> call_sign;
+    std::optional<int> ship_type;
+    std::optional<int> to_bow;
+    std::optional<int> to_stern;
+    std::optional<int> to_port;
+    std::optional<int> to_starboard;
+};
+
+std::optional<std::string> text_column(sqlite3_stmt* stmt, int index) {
+    if (sqlite3_column_type(stmt, index) == SQLITE_NULL) return std::nullopt;
+    return std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, index)));
+}
+
+std::optional<int> int_column(sqlite3_stmt* stmt, int index) {
+    if (sqlite3_column_type(stmt, index) == SQLITE_NULL) return std::nullopt;
+    return sqlite3_column_int(stmt, index);
+}
+
+// Every ship_static row, so a test can check both what one ship holds and
+// that an upsert did not add a second row for it.
+std::vector<ShipStaticRow> read_ship_static(const std::string& db_path) {
+    sqlite3* db = nullptr;
+    sqlite3_open(db_path.c_str(), &db);
+    ais::SqliteConnection connection(db);
+
+    sqlite3_stmt* raw = nullptr;
+    sqlite3_prepare_v2(connection.get(),
+        "SELECT name, call_sign, ship_type, to_bow, to_stern, to_port, to_starboard FROM ship_static ORDER BY mmsi",
+        -1, &raw, nullptr);
+    ais::SqliteStatement statement(raw);
+
+    std::vector<ShipStaticRow> rows;
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        rows.push_back({
+            text_column(statement.get(), 0),
+            text_column(statement.get(), 1),
+            int_column(statement.get(), 2),
+            int_column(statement.get(), 3),
+            int_column(statement.get(), 4),
+            int_column(statement.get(), 5),
+            int_column(statement.get(), 6),
+        });
+    }
+    return rows;
+}
+
+std::string fresh_db_path() {
+    std::string db_path = (std::filesystem::temp_directory_path() / "test.db").string();
+    std::filesystem::remove(db_path);
+    return db_path;
+}
+
+ais::StaticDataPartA part_a(std::uint32_t mmsi, std::string name) {
+    ais::StaticDataPartA data;
+    data.mmsi = mmsi;
+    data.name = std::move(name);
+    return data;
+}
+
+ais::StaticDataPartB part_b(std::uint32_t mmsi) {
+    ais::StaticDataPartB data;
+    data.mmsi = mmsi;
+    data.ship_type = 60;
+    data.call_sign = "LK8786";
+    data.to_bow = 9;
+    data.to_stern = 6;
+    data.to_port = 2;
+    data.to_starboard = 3;
+    return data;
+}
+
+void expect_part_b_columns(const ShipStaticRow& row) {
+    EXPECT_EQ(row.ship_type, 60);
+    EXPECT_EQ(row.call_sign, "LK8786");
+    EXPECT_EQ(row.to_bow, 9);
+    EXPECT_EQ(row.to_stern, 6);
+    EXPECT_EQ(row.to_port, 2);
+    EXPECT_EQ(row.to_starboard, 3);
+}
+
+}  // namespace
+
+// Part B carries no name, so its upsert must leave the name part A stored.
+TEST(SqliteWriterTest, PartBKeepsNameFromPartA) {
+    const std::string db_path = fresh_db_path();
+    write_messages(db_path, {part_a(258020500, "FISHING NET BOUY 1"), part_b(258020500)});
+
+    const auto rows = read_ship_static(db_path);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].name, "FISHING NET BOUY 1");
+    expect_part_b_columns(rows[0]);
+}
+
+// The reverse order: part A must leave the type, call sign and dimensions.
+// Checking part B's columns is the point -- they are the ones stored first,
+// so the ones a whole-row replace would wipe.
+TEST(SqliteWriterTest, PartAKeepsTypeAndDimensionsFromPartB) {
+    const std::string db_path = fresh_db_path();
+    write_messages(db_path, {part_b(258020500), part_a(258020500, "FISHING NET BOUY 1")});
+
+    const auto rows = read_ship_static(db_path);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].name, "FISHING NET BOUY 1");
+    expect_part_b_columns(rows[0]);
+}
+
+TEST(SqliteWriterTest, PartBAloneLeavesNameNull) {
+    const std::string db_path = fresh_db_path();
+    write_messages(db_path, {part_b(258020500)});
+
+    const auto rows = read_ship_static(db_path);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].name, std::nullopt);
+    expect_part_b_columns(rows[0]);
+}
+
+TEST(SqliteWriterTest, LaterPartAReplacesName) {
+    const std::string db_path = fresh_db_path();
+    write_messages(db_path, {part_a(258020500, "OLD NAME"), part_a(258020500, "NEW NAME")});
+
+    const auto rows = read_ship_static(db_path);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].name, "NEW NAME");
+    EXPECT_EQ(rows[0].ship_type, std::nullopt);
 }

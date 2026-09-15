@@ -40,10 +40,14 @@ public:
 private:
     void insert(const PositionReport& report, std::int64_t received_at);
     void upsert(const StaticVoyageData& static_data, std::int64_t received_at);
+    void upsert(const StaticDataPartA& static_data_a, std::int64_t received_at);
+    void upsert(const StaticDataPartB& static_data_b, std::int64_t received_at);
 
     SqliteConnection connection_;
     SqliteStatement statement_;
     SqliteStatement static_statement_;
+    SqliteStatement part_a_statement_;
+    SqliteStatement part_b_statement_;
 };
 
 }
