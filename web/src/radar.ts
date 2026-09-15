@@ -1,5 +1,5 @@
 import type { BoundingBox } from "./api/client";
-import { ageInSeconds, NavStatus, type PositionedRecord, type PositionRecord } from "./api/types";
+import { ageInSeconds, type PositionedRecord, type PositionRecord } from "./api/types";
 
 /** Where the radar sits. Every range, ring and filter is measured from here. */
 export interface RadarCentre {
@@ -157,14 +157,25 @@ export function formatCentre(centre: RadarCentre): string {
   return `${lat}, ${lon}`;
 }
 
-export type BlipCategory = "underWay" | "atAnchor" | "moored" | "fishing" | "other";
+export type BlipCategory =
+  | "passenger"
+  | "cargo"
+  | "tanker"
+  | "fishing"
+  | "service"
+  | "leisure"
+  | "other"
+  | "unknown";
 
 export const BLIP_CATEGORIES: { category: BlipCategory; label: string; colour: string }[] = [
-  { category: "underWay", label: "under way", colour: "#3dd6b0" },
-  { category: "atAnchor", label: "at anchor", colour: "#e8b04b" },
-  { category: "moored", label: "moored", colour: "#7f8fe0" },
+  { category: "passenger", label: "passenger", colour: "#3dd6b0" },
+  { category: "cargo", label: "cargo", colour: "#7f8fe0" },
+  { category: "tanker", label: "tanker", colour: "#e06464" },
   { category: "fishing", label: "fishing", colour: "#e07fb0" },
-  { category: "other", label: "other", colour: "#8a8f87" },
+  { category: "service", label: "tug / pilot / SAR", colour: "#e8b04b" },
+  { category: "leisure", label: "sailing / pleasure", colour: "#b5d96a" },
+  { category: "other", label: "other", colour: "#c6c1ad" },
+  { category: "unknown", label: "type unknown", colour: "#8a8f87" },
 ];
 
 const COLOUR_BY_CATEGORY = Object.fromEntries(
@@ -172,24 +183,26 @@ const COLOUR_BY_CATEGORY = Object.fromEntries(
 ) as Record<BlipCategory, string>;
 
 /**
- * Colours by navigational status, which every position report carries. Ship
- * type would be the better axis, but it only arrives in AIS message type 5,
- * which the decoder does not handle yet.
+ * Colours by AIS ship type, from message type 5. Navigational status is in
+ * the popup instead. Ships the pipeline has no type 5 for yet -- every Class
+ * B transponder, and any ship until its first one arrives, up to 6 minutes --
+ * are "unknown" rather than guessed at, and so are ships that send code 0.
+ *
+ * High-speed craft count as passenger: along this coast they are almost all
+ * fast ferries.
  */
 export function categoryOf(record: PositionRecord): BlipCategory {
-  switch (record.nav_status) {
-    case NavStatus.UnderWayEngine:
-    case NavStatus.UnderWaySailing:
-      return "underWay";
-    case NavStatus.AtAnchor:
-      return "atAnchor";
-    case NavStatus.Moored:
-      return "moored";
-    case NavStatus.Fishing:
-      return "fishing";
-    default:
-      return "other";
-  }
+  const code = record.ship_type;
+  if (code === null || code === 0) return "unknown";
+
+  if (code === 30) return "fishing";
+  if (code === 36 || code === 37) return "leisure";
+  if ((code >= 31 && code <= 34) || (code >= 50 && code <= 59)) return "service";
+  if (code >= 40 && code <= 49) return "passenger";
+  if (code >= 60 && code <= 69) return "passenger";
+  if (code >= 70 && code <= 79) return "cargo";
+  if (code >= 80 && code <= 89) return "tanker";
+  return "other";
 }
 
 export function colourOf(category: BlipCategory): string {

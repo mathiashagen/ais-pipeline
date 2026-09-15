@@ -5,7 +5,7 @@ import { usePositions } from "./hooks/usePositions";
 import { useHistory } from "./hooks/useHistory";
 import { useNow } from "./hooks/useNow";
 import { useRadarView } from "./hooks/useRadarView";
-import { hasPosition } from "./api/types";
+import { displayName, hasPosition } from "./api/types";
 import { boundingBoxAround, inRange, type RadarCentre } from "./radar";
 import "./App.css";
 
@@ -26,6 +26,9 @@ export default function App() {
     .filter(hasPosition)
     .filter((record) => inRange(centre, rangeNm, record));
   const trackPoints = track.records.filter(hasPosition).length;
+  // Looked up in the latest poll rather than kept from the click, so a name
+  // that arrives while the ship is selected shows up.
+  const selected = records.find((record) => record.mmsi === selectedMmsi);
 
   function moveTo(next: RadarCentre) {
     // The range stays as it was, like a radar's range knob.
@@ -65,7 +68,9 @@ export default function App() {
 
         {selectedMmsi !== null && (
           <div className="selection">
-            <strong>MMSI {selectedMmsi}</strong>
+            <strong>
+              {displayName({ mmsi: selectedMmsi, name: selected?.name ?? null })}
+            </strong>
             {track.loading && " · loading track…"}
             {track.error && <span className="error"> {track.error}</span>}
             {!track.loading &&

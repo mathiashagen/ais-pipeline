@@ -1,6 +1,12 @@
 import { divIcon, type DivIcon } from "leaflet";
 import { Marker, Popup } from "react-leaflet";
-import { navStatusLabel, receivedAt, type PositionedRecord } from "../api/types";
+import {
+  displayName,
+  navStatusLabel,
+  receivedAt,
+  shipTypeLabel,
+  type PositionedRecord,
+} from "../api/types";
 import { bearingOf, categoryOf, colourOf, isStale, type BlipCategory } from "../radar";
 
 const SELECTED_COLOUR = "#f97316";
@@ -13,7 +19,7 @@ const iconCache = new Map<string, DivIcon>();
 /**
  * One cached icon per look. react-leaflet replaces a marker's DOM whenever
  * its icon changes identity, so building a fresh icon per render would redo
- * every blip's DOM on every poll. The cache is bounded: 5 categories x 2
+ * every blip's DOM on every poll. The cache is bounded: 8 categories x 2
  * staleness x 2 selection x (72 bearings + a dot).
  */
 function blipIcon(
@@ -88,7 +94,22 @@ export function RadarBlips({ records, now, selectedMmsi, onSelect }: RadarBlipsP
             eventHandlers={{ click: () => onSelect(record.mmsi) }}
           >
             <Popup>
-              <strong>MMSI {record.mmsi}</strong>
+              <strong>{displayName(record)}</strong>
+              {record.name !== null && (
+                <>
+                  <br />
+                  MMSI {record.mmsi}
+                  {record.call_sign !== null && ` · ${record.call_sign}`}
+                </>
+              )}
+              <br />
+              Type: {shipTypeLabel(record.ship_type)}
+              {record.destination !== null && (
+                <>
+                  <br />
+                  Destination: {record.destination}
+                </>
+              )}
               <br />
               {record.latitude.toFixed(4)}, {record.longitude.toFixed(4)}
               <br />

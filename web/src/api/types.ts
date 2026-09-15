@@ -78,6 +78,74 @@ export interface PositionRecord {
 
   /** Wall clock the pipeline stored the row, in epoch SECONDS, not millis. */
   received_at: number;
+
+  /**
+   * From the ship's latest AIS message type 5, joined in by the API. All null
+   * until one has been received -- ships send it every 6 minutes, and Class B
+   * transponders never do -- so every ship must render without them.
+   */
+  name: string | null;
+  call_sign: string | null;
+  destination: string | null;
+
+  /** The raw AIS ship type code, 0-99. 0 means the ship reports none. */
+  ship_type: number | null;
+}
+
+/** The ship's name when known, otherwise its MMSI. */
+export function displayName(record: Pick<PositionRecord, "mmsi" | "name">): string {
+  return record.name ?? `MMSI ${record.mmsi}`;
+}
+
+/**
+ * The type a ship type code names. Codes are grouped by tens; within some
+ * groups the second digit only adds a hazardous-cargo category, which is
+ * left out here.
+ */
+export function shipTypeLabel(code: number | null): string {
+  if (code === null || code === 0) return "Not available";
+
+  switch (code) {
+    case 30:
+      return "Fishing";
+    case 31:
+    case 32:
+      return "Towing";
+    case 33:
+      return "Dredging or underwater ops";
+    case 34:
+      return "Diving ops";
+    case 35:
+      return "Military ops";
+    case 36:
+      return "Sailing";
+    case 37:
+      return "Pleasure craft";
+    case 50:
+      return "Pilot vessel";
+    case 51:
+      return "Search and rescue";
+    case 52:
+      return "Tug";
+    case 53:
+      return "Port tender";
+    case 54:
+      return "Anti-pollution";
+    case 55:
+      return "Law enforcement";
+    case 58:
+      return "Medical transport";
+    case 59:
+      return "Noncombatant ship";
+  }
+
+  if (code >= 20 && code <= 29) return "Wing in ground";
+  if (code >= 40 && code <= 49) return "High-speed craft";
+  if (code >= 60 && code <= 69) return "Passenger";
+  if (code >= 70 && code <= 79) return "Cargo";
+  if (code >= 80 && code <= 89) return "Tanker";
+  if (code >= 90 && code <= 99) return "Other type";
+  return `Reserved (${code})`;
 }
 
 /** A record known to carry a position, so latitude/longitude are non-null. */
