@@ -8,6 +8,7 @@ add_library(ais_decoder
     src/position_report.cpp
     src/decoder.cpp
     src/sentence_assembler.cpp
+    src/static_voyage_data.cpp
 )
 
 target_include_directories(ais_decoder PUBLIC include)

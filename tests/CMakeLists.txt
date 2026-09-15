@@ -12,6 +12,7 @@ add_executable(all_tests
     sqlite_writer_tests.cpp
     position_reader_tests.cpp
     position_record_tests.cpp
+    static_voyage_data_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE
