@@ -5,6 +5,7 @@
 #include "ais/position_report.hpp"
 #include "ais/decoder.hpp"
 #include "ais/sentence_assembler.hpp"
+#include "ais/static_voyage_data.hpp"
 
 TEST(Sentence, ChecksumValidation) {
     // Example of a test that checks the checksum of an AIS sentence.
@@ -178,4 +179,127 @@ TEST(SentenceAssembler, PassesThroughSinglePart) {
     auto result = assembler.add(sentence);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->bit_count(), 168);
+}
+
+TEST(SentenceAssembler, InterleavedTwoChannels) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1_channelA("!AIVDM,2,1,5,A,15M67FC000G?uf,0*06");
+    auto result1 = assembler.add(part1_channelA);
+    EXPECT_FALSE(result1.has_value());   // still waiting on part 2 of channel A
+
+    ais::Sentence part1_channelB("!AIVDM,2,1,5,B,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*1B");
+    auto result2 = assembler.add(part1_channelB);
+    EXPECT_FALSE(result2.has_value());   // still waiting on part 2 of channel B
+
+    ais::Sentence part2_channelA("!AIVDM,2,2,5,A,bE`FepT@3n00Sa,0*7C");
+    auto result3 = assembler.add(part2_channelA);
+    ASSERT_TRUE(result3.has_value());
+
+    ais::Sentence part2_channelB("!AIVDM,2,2,5,B,88888888880,2*22");
+    auto result4 = assembler.add(part2_channelB);
+    ASSERT_TRUE(result4.has_value());
+
+    EXPECT_EQ(result3->bit_count(), 168);
+    EXPECT_EQ(result4->bit_count(), 424);
+    auto report3 = ais::decode_position_report(*result3);
+    ASSERT_TRUE(report3.has_value());
+    EXPECT_EQ(report3->mmsi, 366053209);
+
+    auto report4 = ais::decode_static_voyage_data(*result4);
+    ASSERT_TRUE(report4.has_value());
+    EXPECT_EQ(report4->mmsi, 351759000);
+}
+
+TEST(SentenceAssembler, LostFragment) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,2,1,5,A,15M67FC000G?uf,0*06");
+    auto result1 = assembler.add(part1);
+    EXPECT_FALSE(result1.has_value());
+
+    ais::Sentence single("!AIVDM,2,1,5,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*18");
+    auto result2 = assembler.add(single);
+    EXPECT_FALSE(result2.has_value());
+
+    ais::Sentence part2("!AIVDM,2,2,5,A,88888888880,2*21");
+    auto result3 = assembler.add(part2);
+    ASSERT_TRUE(result3.has_value());
+
+    EXPECT_EQ(result3->bit_count(), 424);
+}
+
+TEST(SentenceAssembler, WrongOrder) {
+    ais::SentenceAssembler assembler;
+    ais::Sentence part2("!AIVDM,2,2,5,A,bE`FepT@3n00Sa,0*7C");
+    auto result = assembler.add(part2);
+    EXPECT_FALSE(result.has_value());   // part 1 was never added, so part 2 should not be accepted
+    // Now add part 1 and check if the assembler can correctly assemble the message
+    ais::Sentence part1("!AIVDM,2,1,5,A,15M67FC000G?uf,0*06");
+    auto result2 = assembler.add(part1);
+    EXPECT_FALSE(result2.has_value());   // still waiting on part 2
+    auto result3 = assembler.add(part2);
+    ASSERT_TRUE(result3.has_value());    // now it should be accepted
+
+    auto report = ais::decode_position_report(*result3);
+    ASSERT_TRUE(report.has_value());
+    EXPECT_EQ(report->mmsi, 366053209);
+}
+
+TEST(SentenceAssembler, ReassemblesThreeParts) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,3,1,7,A,55?MbV02;H;s<HtKR20EHE:0@,0*75");
+    auto result1 = assembler.add(part1);
+    EXPECT_FALSE(result1.has_value());
+
+    ais::Sentence part2("!AIVDM,3,2,7,A,T4@Dn2222222216L961O5Gf0N,0*4A");
+    auto result2 = assembler.add(part2);
+    EXPECT_FALSE(result2.has_value());
+
+    ais::Sentence part3("!AIVDM,3,3,7,A,SQEp6ClRp888888888880,2*17");
+    auto result3 = assembler.add(part3);
+    ASSERT_TRUE(result3.has_value());
+
+    EXPECT_EQ(result3->bit_count(), 424);
+
+    auto report = ais::decode_static_voyage_data(*result3);
+    ASSERT_TRUE(report.has_value());
+    EXPECT_EQ(report->mmsi, 351759000);
+}
+
+TEST(SentenceAssembler, DuplicateFragmentDropsMessage) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,3,1,7,A,55?MbV02;H;s<HtKR20EHE:0@,0*75");
+    auto result1 = assembler.add(part1);
+    EXPECT_FALSE(result1.has_value());
+
+    ais::Sentence part2("!AIVDM,3,2,7,A,T4@Dn2222222216L961O5Gf0N,0*4A");
+    auto result2 = assembler.add(part2);
+    EXPECT_FALSE(result2.has_value());
+
+    ais::Sentence part2duplicate("!AIVDM,3,2,7,A,T4@Dn2222222216L961O5Gf0N,0*4A");
+    auto result2duplicate = assembler.add(part2duplicate);
+    EXPECT_FALSE(result2duplicate.has_value());
+
+    ais::Sentence part3("!AIVDM,3,3,7,A,SQEp6ClRp888888888880,2*17");
+    auto result3 = assembler.add(part3);
+    ASSERT_FALSE(result3.has_value());
+}
+
+TEST(SentenceAssembler, LostMiddleFragmentWithDuplicateDropsMessage) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,3,1,7,A,55?MbV02;H;s<HtKR20EHE:0@,0*75");
+    auto result1 = assembler.add(part1);
+    EXPECT_FALSE(result1.has_value());
+
+    ais::Sentence part2("!AIVDM,3,3,7,A,SQEp6ClRp888888888880,2*17");
+    auto result2 = assembler.add(part2);
+    EXPECT_FALSE(result2.has_value());
+
+    ais::Sentence part3("!AIVDM,3,3,7,A,SQEp6ClRp888888888880,2*17");
+    auto result3 = assembler.add(part3);
+    ASSERT_FALSE(result3.has_value());
 }
