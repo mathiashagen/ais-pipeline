@@ -303,3 +303,42 @@ TEST(SentenceAssembler, LostMiddleFragmentWithDuplicateDropsMessage) {
     auto result3 = assembler.add(part3);
     ASSERT_FALSE(result3.has_value());
 }
+
+TEST(SentenceAssembler, SameChannelAndSequenceIDFromTwoSources) {
+    ais::SentenceAssembler assembler;
+
+    ais::Sentence part1("!AIVDM,2,1,5,A,15M67FC000G?uf,0*06");
+    auto result1 = assembler.add(part1, "2573505");
+    EXPECT_FALSE(result1.has_value());
+
+    ais::Sentence part2("!AIVDM,2,1,5,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*18");
+    auto result2 = assembler.add(part2, "2573238");
+    EXPECT_FALSE(result2.has_value());
+
+    ais::Sentence part3("!AIVDM,2,2,5,A,bE`FepT@3n00Sa,0*7C");
+    auto result3 = assembler.add(part3, "2573505");
+    ASSERT_TRUE(result3.has_value());
+    EXPECT_EQ(result3->bit_count(), 168);
+    auto report = ais::decode_position_report(*result3);
+    ASSERT_TRUE(report.has_value());
+    EXPECT_EQ(report->mmsi, 366053209);
+
+    ais::Sentence part4("!AIVDM,2,2,5,A,88888888880,2*21");
+    auto result4 = assembler.add(part4, "2573238");
+    ASSERT_TRUE(result4.has_value());
+    EXPECT_EQ(result4->bit_count(), 424);
+    auto report4 = ais::decode_static_voyage_data(*result4);
+    ASSERT_TRUE(report4.has_value());
+    EXPECT_EQ(report4->mmsi, 351759000);
+
+    std::string source = "2573505";
+    auto result5 = assembler.add(part1, source);
+    EXPECT_FALSE(result5.has_value());
+    source = "9999999";
+    auto result6 = assembler.add(part3, std::string("2573505"));
+    ASSERT_TRUE(result6.has_value());
+    EXPECT_EQ(result6->bit_count(), 168);
+    auto report6 = ais::decode_position_report(*result6);
+    ASSERT_TRUE(report6.has_value());
+    EXPECT_EQ(report6->mmsi, 366053209);
+}

@@ -4,7 +4,7 @@
 
 namespace ais {
 
-std::optional<Payload> SentenceAssembler::add(const Sentence& sentence) {
+std::optional<Payload> SentenceAssembler::add(const Sentence& sentence, std::string_view source) {
     if (sentence.fragment_count() == 1) {
         return Payload(sentence.payload(), sentence.fill_bits());
     }
@@ -12,7 +12,7 @@ std::optional<Payload> SentenceAssembler::add(const Sentence& sentence) {
     if (!sentence.sequence_id().has_value()) {
         return std::nullopt;
     }
-    const FragmentKey key{std::string(sentence.channel()), *sentence.sequence_id()};
+    const FragmentKey key{std::string(source), std::string(sentence.channel()), *sentence.sequence_id()};
 
     auto& group = pending_[key];
 

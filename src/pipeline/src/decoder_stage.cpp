@@ -11,7 +11,8 @@ void DecoderStage::run(ThreadSafeQueue<std::string>& input, ThreadSafeQueue<AisM
             if (view) {
                 Sentence sentence(*view);
                 if(sentence.is_valid() && sentence.is_well_formed()) {
-                    std::optional<Payload> payload = assembler_.add(sentence);
+                    std::optional<std::string_view> source = tag_block_source(*line);
+                    std::optional<Payload> payload = assembler_.add(sentence, source.value_or(std::string_view{}));
                     if (payload) {
                         auto result = decode_message(*payload);
                         if (result) {

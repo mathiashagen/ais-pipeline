@@ -107,3 +107,37 @@ TEST(DecoderStageTests, Type5Test) {
     input.close();
     decoder_thread.join();
 }
+
+TEST(DecoderStageTests, SourceTag) {
+    // Arrange
+    ais::ThreadSafeQueue<std::string> input(100);
+    ais::ThreadSafeQueue<ais::AisMessage> output(100);
+    ais::DecoderStage decoder;
+    std::stop_source stop_source;
+
+    // Act
+    std::jthread decoder_thread([&] {
+        decoder.run(input, output, stop_source.get_token());
+    });
+
+    // Push multi-fragment test sentences
+    input.push("\\s:2573505,c:1*00\\!AIVDM,2,1,5,A,15M67FC000G?uf,0*06");
+    input.push("\\s:2573238,c:1*00\\!AIVDM,2,1,5,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*18");
+    input.push("\\s:2573505,c:1*00\\!AIVDM,2,2,5,A,bE`FepT@3n00Sa,0*7C");
+    input.push("\\s:2573238,c:1*00\\!AIVDM,2,2,5,A,88888888880,2*21");
+
+    // Assert
+    input.close();
+    decoder_thread.join();
+    output.close();
+
+    std::optional<ais::AisMessage> result1 = output.pop();
+    ASSERT_TRUE(result1.has_value());
+    ASSERT_TRUE(std::holds_alternative<ais::PositionReport>(*result1));
+    EXPECT_EQ(std::get<ais::PositionReport>(*result1).mmsi, 366053209);
+
+    std::optional<ais::AisMessage> result2 = output.pop();
+    ASSERT_TRUE(result2.has_value());
+    ASSERT_TRUE(std::holds_alternative<ais::StaticVoyageData>(*result2));
+    EXPECT_EQ(std::get<ais::StaticVoyageData>(*result2).mmsi, 351759000);
+}
