@@ -2,6 +2,7 @@ import { divIcon, type DivIcon } from "leaflet";
 import { Marker, Popup } from "react-leaflet";
 import {
   displayName,
+  NavStatus,
   navStatusLabel,
   receivedAt,
   shipTypeLabel,
@@ -119,8 +120,14 @@ export function RadarBlips({ records, now, selectedMmsi, onSelect }: RadarBlipsP
               <br />
               Heading:{" "}
               {record.true_heading === null ? "—" : `${record.true_heading}°`}
-              <br />
-              Status: {navStatusLabel(record.nav_status)}
+              {/* Class B position reports carry no status and decode as Not
+                  defined, as do Class A ships that send none. */}
+              {record.nav_status !== NavStatus.NotDefined && (
+                <>
+                  <br />
+                  Status: {navStatusLabel(record.nav_status)}
+                </>
+              )}
               <br />
               Seen: {receivedAt(record).toLocaleTimeString()}
               {stale && " (stale)"}
