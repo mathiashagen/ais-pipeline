@@ -336,6 +336,14 @@ void SqliteWriter::run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_
             }, message);
         }
         transaction.commit();
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_prune_ >= prune_interval) {
+            const auto cutoff = std::chrono::duration_cast<std::chrono::seconds>(
+                (std::chrono::system_clock::now() - retention).time_since_epoch()).count();
+            delete_older_than(cutoff);
+            last_prune_ = now;
+        }
     }
 }
 
@@ -402,6 +410,26 @@ void SqliteWriter::upsert(const StaticDataPartB& static_data_b, std::int64_t rec
     sqlite3_bind_int64(stmt, 8, received_at);
 
     step_once(connection_.get(), stmt);
+}
+
+std::size_t SqliteWriter::delete_older_than(std::int64_t cutoff) {
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "DELETE FROM position_reports WHERE rowid IN (SELECT rowid FROM position_reports WHERE received_at < ? LIMIT ?)";
+    if (sqlite3_prepare_v2(connection_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error(sqlite3_errmsg(connection_.get()));
+    }
+    SqliteStatement statement(stmt);
+    sqlite3_bind_int64(stmt, 1, cutoff);
+    sqlite3_bind_int64(stmt, 2, static_cast<std::int64_t>(prune_chunk_size));
+    std::size_t total = 0;
+    std::size_t deleted = 0;
+    do {
+        step_once(connection_.get(), stmt);
+        deleted = static_cast<std::size_t>(sqlite3_changes(connection_.get()));
+        total += deleted;
+    } while (deleted == prune_chunk_size);
+
+    return total;
 }
 
 }

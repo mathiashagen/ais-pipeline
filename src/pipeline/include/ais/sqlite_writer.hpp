@@ -12,6 +12,7 @@
 #include <string>
 #include <stop_token>
 #include <sqlite3.h>
+#include <chrono>
 
 namespace ais {
 
@@ -37,7 +38,13 @@ public:
 
     explicit SqliteWriter(std::string db_path);
     void run(ThreadSafeQueue<AisMessage>& input, std::stop_token stop_token);
+    static constexpr std::size_t prune_chunk_size = 10000;
+    std::size_t delete_older_than(std::int64_t cutoff);
+    static constexpr std::chrono::hours retention{24};
+    static constexpr std::chrono::minutes prune_interval{5};
 private:
+    std::chrono::steady_clock::time_point last_prune_{};
+
     void insert(const PositionReport& report, std::int64_t received_at);
     void upsert(const StaticVoyageData& static_data, std::int64_t received_at);
     void upsert(const StaticDataPartA& static_data_a, std::int64_t received_at);

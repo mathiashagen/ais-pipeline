@@ -433,3 +433,130 @@ TEST(SqliteWriterTest, LaterPartAReplacesName) {
     EXPECT_EQ(rows[0].name, "NEW NAME");
     EXPECT_EQ(rows[0].ship_type, std::nullopt);
 }
+
+TEST(SqliteWriterTest, DeleteOlderThanKeepsRowsAtAndAfterCutoff) {
+    const std::string db_path = fresh_db_path();
+    ais::SqliteWriter writer(db_path);
+    
+    sqlite3* db;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+    ais::SqliteConnection connection = ais::SqliteConnection(db);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, 1000);", nullptr, nullptr, nullptr), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, 2000);", nullptr, nullptr, nullptr), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, 3000);", nullptr, nullptr, nullptr), SQLITE_OK);
+
+    const std::size_t deleted = writer.delete_older_than(2000);
+    EXPECT_EQ(deleted, 1u);
+
+    std::vector<std::int64_t> rows;
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT received_at FROM position_reports ORDER BY received_at";
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), sql, -1, &stmt, nullptr), SQLITE_OK);
+    ais::SqliteStatement statement(stmt);
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        rows.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0], 2000);
+    EXPECT_EQ(rows[1], 3000);
+}
+
+TEST(SqliteWriterTest, DeleteOlderThanDeletesMoreThanOneChunk) {
+    const std::string db_path = fresh_db_path();
+    ais::SqliteWriter writer(db_path);
+    sqlite3* db;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+    ais::SqliteConnection connection = ais::SqliteConnection(db);
+    const std::size_t old_rows = ais::SqliteWriter::prune_chunk_size * 2 + 1;
+
+    ASSERT_EQ(sqlite3_exec(connection.get(), "BEGIN", nullptr, nullptr, nullptr), SQLITE_OK);
+    {
+        sqlite3_stmt* raw = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(connection.get(),
+            "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, ?)",
+            -1, &raw, nullptr), SQLITE_OK);
+        ais::SqliteStatement insert(raw);
+
+        for (std::size_t i = 0; i < old_rows; ++i) {
+            sqlite3_bind_int64(insert.get(), 1, 1000);
+            ASSERT_EQ(sqlite3_step(insert.get()), SQLITE_DONE);
+            sqlite3_reset(insert.get());
+        }
+    }
+    ASSERT_EQ(sqlite3_exec(connection.get(),
+        "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, 5000);"
+        "COMMIT", nullptr, nullptr, nullptr), SQLITE_OK);
+
+    const std::size_t deleted = writer.delete_older_than(3000);
+    EXPECT_EQ(deleted, old_rows);
+
+    std::vector<std::int64_t> rows;
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT received_at FROM position_reports ORDER BY received_at";
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), sql, -1, &stmt, nullptr), SQLITE_OK);
+    ais::SqliteStatement statement(stmt);
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        rows.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0], 5000);
+}
+
+TEST(SqliteWriterTest, DeleteOlderThanKeepsLatestPosition) {
+    const std::string db_path = fresh_db_path();
+    ais::SqliteWriter writer(db_path);
+    
+    sqlite3* db;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+    ais::SqliteConnection connection = ais::SqliteConnection(db);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO position_reports (mmsi, latitude, longitude, received_at) VALUES (123456789, 62.47, 6.15, 1000);", nullptr, nullptr, nullptr), SQLITE_OK);
+
+    const std::size_t deleted = writer.delete_older_than(2000);
+    EXPECT_EQ(deleted, 1u);
+
+    std::vector<std::int64_t> rows;
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT received_at FROM position_reports ORDER BY received_at";
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), sql, -1, &stmt, nullptr), SQLITE_OK);
+    ais::SqliteStatement statement(stmt);
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        rows.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+
+    ASSERT_EQ(rows.size(), 0u);
+
+    sqlite3_stmt* latest_stmt = nullptr;
+    const char* latest_sql = "SELECT mmsi FROM latest_positions WHERE mmsi = 123456789";
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), latest_sql, -1, &latest_stmt, nullptr), SQLITE_OK);
+    ais::SqliteStatement latest_statement(latest_stmt);
+    ASSERT_EQ(sqlite3_step(latest_statement.get()), SQLITE_ROW);
+    EXPECT_EQ(sqlite3_column_int(latest_statement.get(), 0), 123456789);
+}
+
+TEST(SqliteWriterTest, DeleteOlderThanKeepsShipStatic) {
+    const std::string db_path = fresh_db_path();
+    ais::SqliteWriter writer(db_path);
+    
+    sqlite3* db;
+    ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+    ais::SqliteConnection connection = ais::SqliteConnection(db);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO ship_static (mmsi, name, received_at) VALUES (123456789, 'OLD SHIP', 1000);", nullptr, nullptr, nullptr), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(connection.get(), "INSERT INTO position_reports (mmsi, received_at) VALUES (123456789, 1000);", nullptr, nullptr, nullptr), SQLITE_OK);
+
+    const std::size_t deleted = writer.delete_older_than(2000);
+    EXPECT_EQ(deleted, 1u);
+
+    std::vector<std::int64_t> rows;
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT received_at FROM ship_static ORDER BY received_at";
+    ASSERT_EQ(sqlite3_prepare_v2(connection.get(), sql, -1, &stmt, nullptr), SQLITE_OK);
+    ais::SqliteStatement statement(stmt);
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        rows.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0], 1000);
+}
