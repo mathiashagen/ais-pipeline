@@ -56,9 +56,12 @@ reader blocking the writer.
 
 The queues between stages are bounded, so a slow SQLite write pushes back on
 the decoder rather than letting memory grow without limit. Shutdown is
-cooperative: Ctrl+C requests a stop through a `std::stop_source`, each queue is
-closed in order, and every `std::jthread` drains and joins before `main`
-returns.
+cooperative: SIGINT (Ctrl+C) or SIGTERM (`docker stop`) only sets a lock-free
+`std::atomic<bool>`, since little else is safe inside a signal handler. `main`
+sees it, stops the reader thread, closes each queue in order, and every
+`std::jthread` drains and joins before `main` returns. `api_server` handles
+the same signals by stopping its HTTP server and letting requests in progress
+finish.
 
 ## What is implemented
 
@@ -178,7 +181,51 @@ Presets: `debug`, `release`, and `asan` (AddressSanitizer + UBSan, Linux only,
 since MinGW GCC ships no libasan). The `.vscode/` folder configures CMake
 Tools, clangd and gdb for the MSYS2 layout.
 
-## Running
+## Running with Docker
+
+The quickest way to run everything is Docker Compose. From the repository
+root:
+
+```bash
+docker compose up -d
+```
+
+Then open http://localhost:8080. The first start builds the images, which
+takes a few minutes; the C++ build runs the test suite and stops if a test
+fails.
+
+| Service    | Image                                            | Role                                                        |
+| ---------- | ------------------------------------------------ | ----------------------------------------------------------- |
+| `pipeline` | `Dockerfile`, Ubuntu 24.04 runtime               | Reads the feed and writes `/data/ais_data.db`               |
+| `api`      | Same image, `api_server` as the command          | Serves the REST API on port 8080 inside the Compose network |
+| `web`      | `web/Dockerfile`, nginx                          | Serves the map and forwards `/api/` to `api`                |
+
+Only `web` publishes a port. The browser calls the API as `/api/...` on the
+same address, so there are no cross-origin requests; to use another host
+port, change `"8080:80"` in `compose.yaml`. The API starts once a healthcheck
+sees the pipeline's database file, since `api_server` exits if it is missing.
+All three restart automatically unless you stop them.
+
+```bash
+docker compose logs -f          # follow the logs of all services
+docker compose up -d --build    # rebuild and restart after changing the code
+docker compose stop             # stop, keeping the containers
+docker compose down             # remove containers and network, keep the data
+```
+
+The database lives in the named volume `ais-pipeline_ais-data`, so it
+survives `down` and rebuilds. `docker compose down -v` deletes the volume and
+with it all stored history.
+
+Both images are multi-stage builds. The C++ image compiles on the same Ubuntu
+24.04 base CI tests on and keeps only the two binaries and SQLite (about
+120 MB), running as a non-root user. The web image builds with Node 22 and
+serves the static files from `nginx:alpine`; the API base URL is baked in at
+build time from the `VITE_API_URL` build argument, `/api` by default. Both
+programs run as PID 1 and stop cleanly on the SIGTERM `docker stop` sends; CI
+checks this for each.
+
+## Running from a local build
 
 Start the pipeline. It connects to Kystverket's feed and writes to
 `ais_data.db` in the current directory, keeping the last 24 hours of position
@@ -227,7 +274,9 @@ src/app/         kystverket_pipeline executable
 src/api_server/  api_server executable
 tests/           GoogleTest suite and the live-capture fixture
 third_party/     Vendored cpp-httplib (single header, not in pacman)
-web/             React + Leaflet radar display (Vite, TypeScript)
+web/             React + Leaflet radar display (Vite, TypeScript), with its Dockerfile and nginx.conf
+Dockerfile       Multi-stage image for kystverket_pipeline and api_server
+compose.yaml     Runs pipeline, api and web together
 ```
 
 ## Dependencies
