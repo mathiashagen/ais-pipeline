@@ -20,3 +20,8 @@ ais_data.db*
 # OS
 Thumbs.db
 .DS_Store
+
+# Personal working notes and Claude Code config, kept locally only
+CLAUDE.md
+PLAN.md
+.claude/launch.json
