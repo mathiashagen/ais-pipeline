@@ -1,0 +1,30 @@
+name: ais-pipeline
+services:
+  pipeline:
+    build: .
+    image: ais-pipeline
+    pull_policy: build
+    restart: unless-stopped
+    volumes:
+      - ais-data:/data
+    healthcheck:
+      test: ["CMD", "test", "-f", "/data/ais_data.db"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 5s
+
+  api:
+    image: ais-pipeline
+    pull_policy: never
+    command: ["api_server"]
+    restart: unless-stopped
+    depends_on:
+      pipeline:
+        condition: service_healthy
+    volumes:
+      - ais-data:/data
+    ports:
+      - "8080:8080"
+volumes:
+  ais-data:
