@@ -1,6 +1,6 @@
 # AIS-pipeline
 
-[![CI](https://github.com/GITHUB_USER/AIS-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/GITHUB_USER/AIS-pipeline/actions/workflows/ci.yml)
+[![CI](https://github.com/mathiashagen/ais-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/mathiashagen/ais-pipeline/actions/workflows/ci.yml)
 
 A real-time data pipeline in modern C++ that reads live AIS ship traffic from
 Kystverket's open TCP feed, decodes the binary NMEA payloads bit by bit, stores
