@@ -1,8 +1,12 @@
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include "httplib.h"
 #include "ais/position_reader.hpp"
@@ -23,6 +27,16 @@ void print_usage(std::string_view program) {
 }
 
 }  // namespace
+
+// Same pattern as kystverket_pipeline: the handler only sets a lock-free
+// atomic, and ordinary code in main does the actual shutdown.
+static_assert(std::atomic<bool>::is_always_lock_free);
+constinit std::atomic<bool> g_stop_requested{false};
+
+// SIGINT is Ctrl+C; SIGTERM is what docker stop and systemctl stop send.
+extern "C" void handle_stop_signal(int) {
+    g_stop_requested.store(true);
+}
 
 int main(int argc, char* argv[]) {
     if (argc > 1 && (std::string_view(argv[1]) == "-h" || std::string_view(argv[1]) == "--help")) {
@@ -121,12 +135,38 @@ int main(int argc, char* argv[]) {
         res.set_header("Access-Control-Allow-Origin", "*");
     });
 
+    std::signal(SIGINT, handle_stop_signal);
+    std::signal(SIGTERM, handle_stop_signal);
+
+    // listen() would block this thread until stop(), and stop() must not be
+    // called from the signal handler. So bind here, where a failure (port in
+    // use, no permission) is reported directly, serve on a second thread, and
+    // let this thread wait for the flag and call stop().
+    if (!server.bind_to_port("0.0.0.0", config.port)) {
+        std::cerr << "Could not listen on port " << config.port << "\n";
+        return EXIT_FAILURE;
+    }
+
     std::cerr << "Serving " << config.db_path << " on http://localhost:" << config.port << "\n";
 
-    // listen() only returns on failure to bind (port in use, no permission)
-    // or after stop(); nobody calls stop() here, so a return is an error.
-    if (!server.listen("0.0.0.0", config.port)) {
-        std::cerr << "Could not listen on port " << config.port << "\n";
+    std::atomic<bool> server_returned{false};
+    std::jthread server_thread([&server, &server_returned] {
+        server.listen_after_bind();
+        server_returned.store(true);
+    });
+
+    while (!g_stop_requested.load() && !server_returned.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    // stop() closes the listening socket; listen_after_bind() then lets the
+    // requests in progress finish before it returns. Safe to call even if the
+    // server thread has not reached listen_after_bind() yet.
+    server.stop();
+    server_thread.join();
+
+    if (!g_stop_requested.load()) {
+        std::cerr << "Server stopped unexpectedly\n";
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
