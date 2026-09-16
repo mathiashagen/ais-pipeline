@@ -9,3 +9,5 @@
 CMakeLists.txt text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf
