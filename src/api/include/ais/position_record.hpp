@@ -5,6 +5,24 @@
 #include <nlohmann/json.hpp>
 #include "ais/position_report.hpp"
 
+// nlohmann/json converts std::optional itself only from 3.12; Ubuntu 24.04
+// and Debian 13 ship 3.11.3. A free to_json would have to live in namespace
+// std to be found by ADL, which is not allowed, so specialize the library's
+// serializer instead. An explicit specialization wins over 3.12's built-in
+// overload, so this works on both.
+namespace nlohmann {
+template <typename T>
+struct adl_serializer<std::optional<T>> {
+    static void to_json(json& j, const std::optional<T>& opt) {
+        if (opt) {
+            j = *opt;
+        } else {
+            j = nullptr;
+        }
+    }
+};
+}
+
 namespace ais {
 
 struct PositionRecord
