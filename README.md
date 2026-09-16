@@ -4,9 +4,9 @@
 
 A real-time data pipeline in modern C++ that reads live AIS ship traffic from
 Kystverket's open TCP feed, decodes the binary NMEA payloads bit by bit, stores
-every position report in SQLite, and serves them over a small REST API. A React
-radar display on top shows the ships around any point on the Norwegian coast as
-they move.
+position reports and ship details in SQLite, and serves them over a small REST
+API. A React radar display on top shows the ships around any point on the
+Norwegian coast as they move.
 
 The map is the least interesting part. The point of the project is the plumbing
 underneath: decoding a binary protocol at the bit level, keeping a long-running
@@ -32,12 +32,14 @@ Kystverket AIS feed  (TCP, NMEA 0183 sentences with tag blocks)
 │  DecoderStage   │  strip tag block → Sentence (checksum, fields)
 │                 │  → SentenceAssembler (multi-part messages)
 │                 │  → Payload (6-bit "armored" ASCII → bitstream)
-│                 │  → PositionReport (message types 1–3)
+│                 │  → AisMessage: position reports (types 1–3, 18)
+│                 │    or static data (types 5, 24)
 └────────┬────────┘
-         │  ThreadSafeQueue<PositionReport>  (bounded)
+         │  ThreadSafeQueue<AisMessage>  (bounded; std::variant)
          ▼
 ┌─────────────────┐  writer thread
-│  SqliteWriter   │  batched transactions, WAL mode
+│  SqliteWriter   │  batched transactions, WAL mode,
+│                 │  24-hour retention on position history
 └────────┬────────┘
          │  ais_data.db
          ▼
@@ -60,30 +62,46 @@ returns.
 
 ## What is implemented
 
-- **AIVDM parsing**: checksum validation, field extraction, multi-fragment
-  reassembly, and the NMEA tag blocks Kystverket prefixes to each line.
+- **AIVDM parsing**: checksum validation, field extraction, and the NMEA tag
+  blocks Kystverket prefixes to each line. Multi-fragment messages are
+  reassembled per source station, channel and sequence ID, and a broken
+  fragment sequence is dropped rather than stitched together wrongly.
 - **6-bit payload decoding** into a bitstream, with signed and unsigned field
-  readers.
-- **Position reports** (message types 1, 2 and 3): MMSI, position, speed and
-  course over ground, heading, navigational status, rate of turn.
-- **Pipeline**: Asio TCP client with reconnect, a bounded thread-safe queue,
-  and an SQLite writer using RAII wrappers around the C handles. It commits
-  whatever has queued up as one transaction, so bursts are written in batches.
+  readers and 6-bit text fields.
+- **Position reports**: Class A (message types 1, 2 and 3) and Class B
+  (type 18). MMSI, position, speed and course over ground, heading,
+  navigational status, and rate of turn for Class A.
+- **Static data**: Class A static and voyage data (type 5: name, call sign,
+  IMO, ship type, dimensions, draught, destination, ETA) and Class B static
+  data (type 24, parts A and B). Every decoded message is an `AisMessage`, a
+  `std::variant` the writer dispatches on with `std::visit`.
+- **Pipeline**: Asio TCP client with connect and read timeouts, reconnect with
+  exponential back-off and a prompt stop even mid-read; bounded thread-safe
+  queues; and an SQLite writer using RAII wrappers around the C handles. It
+  commits whatever has queued up as one transaction, so bursts are written in
+  batches.
+- **Storage**: every position report goes into `position_reports`, and a
+  trigger keeps `latest_positions` at one row per ship. Static data is upserted
+  into `ship_static`, one row per ship, with type 24 parts A and B filling in
+  their own columns without overwriting each other. Position history is kept
+  for 24 hours: every 5 minutes the writer deletes older reports in chunks of
+  10,000, each its own transaction, so the write lock is never held for long.
+  `latest_positions` and `ship_static` are not pruned.
 - **REST API**: latest position per ship, ships inside a bounding box, and the
-  history of one ship. Latest and area queries read a `latest_positions` table
-  that a trigger keeps at one row per ship, so they stay fast however much
-  history accumulates; history uses an index on `(mmsi, received_at)`.
+  history of one ship. Latest and area queries read `latest_positions` joined
+  with `ship_static`, so they stay fast however much history accumulates;
+  history uses an index on `(mmsi, received_at)`.
 - **Radar display**: fixed on a centre chosen by place-name search, a click on
   the map or the device's position, with stepped ranges from 1 to 60 nm and
   range rings that always fill the view the same way. Ships are arrows along
-  their heading, coloured by navigational status, faded when they go quiet;
-  selecting one draws its recorded track. The coastline is Kartverket's N250
-  data, pre-processed into tiles by `web/scripts/build-coastline.mjs`.
-- **Tests**: 47 GoogleTest cases covering the decoder, framer, queue, TCP
-  client, writer and reader, including a fixture of 765 real lines captured
-  from the live feed.
-
-Static ship data (message type 5, with name and dimensions) is not decoded yet.
+  their heading, coloured by ship type, faded when they go quiet; selecting one
+  shows its name, call sign, destination and status and draws its recorded
+  track. The coastline is Kartverket's N250 data, pre-processed into tiles by
+  `web/scripts/build-coastline.mjs`.
+- **Tests**: 98 GoogleTest cases covering the decoder, sentence assembly,
+  framer, tag blocks, queue, TCP client, writer and reader, including a
+  fixture of 765 real lines captured from the live feed. Two of them connect
+  to the live feed and are disabled by default.
 
 ## Throughput
 
@@ -163,7 +181,8 @@ Tools, clangd and gdb for the MSYS2 layout.
 ## Running
 
 Start the pipeline. It connects to Kystverket's feed and writes to
-`ais_data.db` in the current directory:
+`ais_data.db` in the current directory, keeping the last 24 hours of position
+history (roughly 190,000 reports on a normal day). Stop it with Ctrl+C:
 
 ```bash
 ./build/debug/src/app/kystverket_pipeline [host] [port] [db_path]
@@ -192,13 +211,16 @@ cd web && npm install && npm run dev
 
 Every record is a JSON object with `mmsi`, `latitude`, `longitude`, `sog`,
 `cog`, `true_heading`, `nav_status`, `timestamp` and `received_at` (Unix
-seconds). Fields the ship did not report are `null`. Bad query parameters give
-a 400 with a plain-text reason.
+seconds), plus `name`, `call_sign`, `destination` and `ship_type` from the
+ship's static data. Fields the ship did not report are `null`; the static
+fields are always `null` in history records. History goes back at most 24
+hours. Bad query parameters give a 400 with a plain-text reason.
 
 ## Project layout
 
 ```
-src/decoder/     Pure decoding library, no I/O: Sentence, Payload, SentenceAssembler, PositionReport
+src/decoder/     Pure decoding library, no I/O: Sentence, Payload, SentenceAssembler,
+                 PositionReport, StaticVoyageData, StaticDataReport, AisMessage
 src/pipeline/    Runtime pieces: TcpClient, LineFramer, tag blocks, ThreadSafeQueue, DecoderStage, SqliteWriter
 src/api/         PositionReader and the JSON shape of a record
 src/app/         kystverket_pipeline executable

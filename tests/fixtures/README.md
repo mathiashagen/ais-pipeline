@@ -9,9 +9,10 @@ access details (free, no registration required, NLOD-licensed).
 
 **Not plain AIVDM.** Each line is prefixed with an NMEA tag block —
 `\s:<station>,c:<unix-timestamp>*<checksum>\` — before the `!...VDM` sentence
-itself. `Sentence` does not currently strip this; a raw line handed to it
-as-is will be parsed incorrectly (wrong checksum range, shifted comma count).
-This file exists specifically to test that stripping step once it's built.
+itself. `Sentence` does not strip this itself; a raw line handed to it as-is
+will be parsed incorrectly (wrong checksum range, shifted comma count).
+`DecoderStage` separates the tag block (see `tag_block.hpp`) before parsing,
+and uses its station as the source when reassembling fragments.
 
 Also includes three different talker IDs (`B1VDM`, `B2VDM`, `BSVDM` — not the
 `AIVDM` used in every synthetic test fixture so far) and ~266 lines that are
