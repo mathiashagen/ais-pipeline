@@ -60,6 +60,37 @@ jobs:
       - name: Test
         run: ctest --preset asan
 
+      # docker stop and systemctl stop send SIGTERM, then SIGKILL after a grace
+      # period. Nothing listens on 127.0.0.1:9, so the pipeline sits in its
+      # reconnect loop; it must still shut down promptly and exit 0. Under
+      # ASan, a leak or use-after-free during shutdown fails this step too.
+      - name: Stop cleanly on SIGTERM
+        run: |
+          ./build/asan/src/app/kystverket_pipeline 127.0.0.1 9 "$RUNNER_TEMP/sigterm.db" &
+          pid=$!
+          sleep 3
+
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::pipeline exited before SIGTERM was sent"
+            wait "$pid" || true
+            exit 1
+          fi
+
+          kill -TERM "$pid"
+          if ! timeout 10 tail --pid="$pid" -f /dev/null; then
+            echo "::error::pipeline still running 10 s after SIGTERM"
+            kill -KILL "$pid"
+            exit 1
+          fi
+
+          status=0
+          wait "$pid" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::pipeline exited with status $status after SIGTERM (143 means the signal killed it)"
+            exit 1
+          fi
+          echo "pipeline stopped cleanly on SIGTERM"
+
   web:
     name: Web (Vite + TypeScript)
     runs-on: ubuntu-latest

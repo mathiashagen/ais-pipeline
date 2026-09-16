@@ -1,3 +1,4 @@
+#include <atomic>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
@@ -41,10 +42,16 @@ Config parse_args(int argc, char* argv[]) {
 
 }  // namespace
 
-std::stop_source g_stop_source;
+// A signal handler can interrupt any thread mid-instruction, even inside
+// malloc or while a mutex is held, so all it may safely do is write a
+// lock-free atomic. The shutdown itself happens in main once it sees the flag.
+// std::signal passes no context, which is why the flag has to be global.
+static_assert(std::atomic<bool>::is_always_lock_free);
+constinit std::atomic<bool> g_stop_requested{false};
 
-extern "C" void handle_sigint(int) {
-    g_stop_source.request_stop();
+// SIGINT is Ctrl+C; SIGTERM is what docker stop and systemctl stop send.
+extern "C" void handle_stop_signal(int) {
+    g_stop_requested.store(true);
 }
 
 int main(int argc, char* argv[]) {
@@ -59,7 +66,8 @@ int main(int argc, char* argv[]) {
 
     const Config config = parse_args(argc, argv);
 
-    std::signal(SIGINT, handle_sigint);
+    std::signal(SIGINT, handle_stop_signal);
+    std::signal(SIGTERM, handle_stop_signal);
 
     ais::ThreadSafeQueue<std::string> queue1(500);
     ais::ThreadSafeQueue<ais::AisMessage> queue2(500);
@@ -102,7 +110,7 @@ int main(int argc, char* argv[]) {
         writer.run(queue2, st);
     });
 
-    while (!g_stop_source.stop_requested()) {
+    while (!g_stop_requested.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
