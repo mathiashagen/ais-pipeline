@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
@@ -6,10 +7,10 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <algorithm>
 
 #include "ais/concurrent_queue.hpp"
 #include "ais/ais_message.hpp"
+#include "ais/reconnect_backoff.hpp"
 #include "ais/tcp_client.hpp"
 #include "ais/decoder_stage.hpp"
 #include "ais/sqlite_writer.hpp"
@@ -80,16 +81,18 @@ int main(int argc, char* argv[]) {
               << ", writing to " << config.db_path << ". Ctrl+C to stop.\n";
 
     std::jthread client_thread([&client, &queue1](std::stop_token st) {
-        int fail_count = 0;
+        ais::ReconnectBackoff backoff;
         while (!st.stop_requested()) {
+            const auto attempt_start = std::chrono::steady_clock::now();
             try {
                 client.run(queue1, st);
                 break;
             } catch (const std::exception& e) {
-                ++fail_count;
-                std::cerr << "Connection failed (" << e.what() << "), retrying\n";
+                const std::chrono::milliseconds sleep_duration =
+                    backoff.after_failure(std::chrono::steady_clock::now() - attempt_start);
+                std::cerr << "Connection failed (" << e.what() << "), retrying in "
+                          << std::chrono::duration_cast<std::chrono::seconds>(sleep_duration).count() << " s\n";
 
-                std::chrono::milliseconds sleep_duration(std::min(1000 * (1 << fail_count), 30000));
                 auto start = std::chrono::steady_clock::now();
                 while (!st.stop_requested()) {
                     auto now = std::chrono::steady_clock::now();

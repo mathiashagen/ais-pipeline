@@ -4,6 +4,7 @@ add_library(ais_pipeline
     src/tag_block.cpp
     src/decoder_stage.cpp
     src/sqlite_writer.cpp
+    src/reconnect_backoff.cpp
 )
 
 target_link_libraries(ais_pipeline PUBLIC ais_decoder)

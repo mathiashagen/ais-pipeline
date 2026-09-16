@@ -16,6 +16,7 @@ add_executable(all_tests
     ais_message_tests.cpp
     class_b_position_report_tests.cpp
     static_data_report_tests.cpp
+    reconnect_backoff_tests.cpp
 )
 
 target_link_libraries(all_tests PRIVATE
