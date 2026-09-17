@@ -1,7 +1,9 @@
 .app {
   display: flex;
   flex-direction: column;
+  /* dvh: on phones 100vh is taller than the screen while the address bar shows. */
   height: 100vh;
+  height: 100dvh;
 }
 
 header {
@@ -13,65 +15,85 @@ header {
   z-index: 1100;
   display: flex;
   align-items: center;
-  gap: 0.5rem 1rem;
+  gap: 0.5rem 1.5rem;
   flex-wrap: wrap;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--radar-line);
+  background: var(--radar-panel);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  min-width: 0;
 }
 
 h1 {
-  font-size: 1.1rem;
   margin: 0;
+  color: var(--radar-ink-bright);
+  font-size: 1.05rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .status {
-  font-size: 0.9rem;
-  color: #6b7280;
+  margin: 0;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
 }
 
-.selection {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-  color: #6b7280;
-  font-variant-numeric: tabular-nums;
+.status strong {
+  color: var(--radar-ink-bright);
 }
 
-.selection strong {
-  color: #f97316;
-}
-
-.selection button,
-.location > button {
-  font: inherit;
+.error {
   padding: 0.15rem 0.5rem;
-  border: 1px solid currentColor;
   border-radius: 4px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
+  background: var(--radar-danger-bg);
+  color: var(--radar-danger-ink);
 }
+
+/* ---- Location picker --------------------------------------------------- */
 
 .location {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 0.5rem;
+  margin-left: auto;
   font-size: 0.9rem;
-  color: #6b7280;
 }
 
 .location-current {
-  color: var(--text-h);
+  color: var(--radar-ink-bright);
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.location > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--radar-line);
+  border-radius: 6px;
+  background: var(--radar-ground);
+  color: var(--radar-ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.location > button:hover:not(:disabled) {
+  border-color: var(--radar-ink-dim);
+  color: var(--radar-ink-bright);
 }
 
 .location > button.active {
-  background: #f97316;
-  border-color: #f97316;
+  border-color: var(--radar-accent);
+  background: var(--radar-accent);
   color: #fff;
 }
 
@@ -86,13 +108,16 @@ h1 {
 
 .location-search input {
   width: 13rem;
-  max-width: 60vw;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--radar-line);
+  border-radius: 6px;
+  background: var(--radar-ground);
+  color: var(--radar-ink-bright);
   font: inherit;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--text-h);
+}
+
+.location-search input::placeholder {
+  color: var(--radar-ink-dim);
 }
 
 .location-results {
@@ -106,10 +131,10 @@ h1 {
   margin: 0;
   padding: 0.25rem;
   list-style: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--radar-line);
   border-radius: 6px;
-  background: var(--bg);
-  box-shadow: var(--shadow);
+  background: var(--radar-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .location-results button {
@@ -120,7 +145,7 @@ h1 {
   border: none;
   border-radius: 4px;
   background: none;
-  color: var(--text);
+  color: var(--radar-ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -128,11 +153,11 @@ h1 {
 
 .location-results button:hover,
 .location-results button:focus-visible {
-  background: var(--accent-bg);
+  background: var(--radar-line);
 }
 
 .location-results strong {
-  color: var(--text-h);
+  color: var(--radar-ink-bright);
 }
 
 .location-results span {
@@ -143,26 +168,9 @@ h1 {
   padding: 0.3rem 0.5rem;
 }
 
-.status .error,
-.selection .error,
-.location .error {
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  background: #fdecea;
-  color: #7f1d1d;
-}
+/* ---- Radar ------------------------------------------------------------- */
 
-/*
- * The radar is a fixed dark instrument look in both page themes, so its
- * colours are set here directly rather than taken from the theme tokens.
- */
 .radar {
-  --radar-ground: #121614;
-  --radar-ink: #8fa596;
-  --radar-ink-dim: #5b6d60;
-  --radar-panel: #1a201c;
-  --radar-line: #2c3830;
-
   position: relative;
   flex: 1;
   min-height: 0;
@@ -184,6 +192,16 @@ h1 {
   /* Leaflet's default is a light grey meant to sit behind tiles. */
   background: var(--radar-ground);
   font-family: var(--mono);
+  /*
+   * Leaflet only claims touch gestures when its own drag or pinch handlers
+   * are on. Both are off here -- pinch steps the range instead -- so without
+   * this the browser would pan or zoom the page under the fingers.
+   */
+  touch-action: none;
+}
+
+.radar .leaflet-container.picking {
+  cursor: crosshair;
 }
 
 /* Leaflet adds a white box behind every divIcon unless told otherwise. */
@@ -198,60 +216,31 @@ h1 {
   overflow: visible;
 }
 
-.radar-label {
+/* A fingertip is far bigger than a 22 px blip; widen what counts as a tap. */
+@media (pointer: coarse) {
+  .radar-blip::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+}
+
+.radar-label span {
+  position: absolute;
   color: var(--radar-ink-dim);
   font-size: 11px;
   white-space: nowrap;
-  /* Offset the text off its anchor point so it sits beside the ring. */
-  transform: translate(4px, -14px);
 }
 
-.radar-label.radar-north {
-  transform: translate(-4px, -18px);
+/* Inside the ring, just above the east axis, so the outer label is never cut off. */
+.radar-label:not(.radar-north) span {
+  right: 4px;
+  bottom: 2px;
 }
 
-.radar-legend {
-  position: absolute;
-  left: 0.75rem;
-  /* Clear of Leaflet's attribution strip along the bottom edge. */
-  bottom: 1.75rem;
-  z-index: 1000;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  max-width: calc(100% - 1.5rem);
-  margin: 0;
-  padding: 0.5rem 0.75rem;
-  list-style: none;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--radar-panel) 88%, transparent);
-  color: var(--radar-ink);
-  font: 12px var(--mono);
-  pointer-events: none;
-}
-
-.radar-legend li {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.radar-legend .radar-legend-note {
-  flex-basis: 100%;
-  color: var(--radar-ink-dim);
-}
-
-.radar .leaflet-container {
-  /*
-   * Leaflet only claims touch gestures when its own drag or pinch handlers
-   * are on. Both are off here -- pinch steps the range instead -- so without
-   * this the browser would pan or zoom the page under the fingers.
-   */
-  touch-action: none;
-}
-
-.radar .leaflet-container.picking {
-  cursor: crosshair;
+.radar-north span {
+  bottom: 3px;
+  transform: translateX(-50%);
 }
 
 .radar-range {
@@ -298,6 +287,49 @@ h1 {
   white-space: nowrap;
 }
 
+.radar-legend {
+  position: absolute;
+  left: 0.75rem;
+  /* Clear of Leaflet's attribution strip along the bottom edge. */
+  bottom: 1.75rem;
+  z-index: 1000;
+  max-width: calc(100% - 1.5rem);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--radar-panel) 88%, transparent);
+  color: var(--radar-ink);
+  font: 12px var(--mono);
+}
+
+.radar-legend summary {
+  padding: 0.4rem 0.75rem;
+  color: var(--radar-ink-dim);
+  cursor: pointer;
+}
+
+.radar-legend[open] summary {
+  padding-bottom: 0;
+}
+
+.radar-legend ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  padding: 0.4rem 0.75rem 0.5rem;
+  list-style: none;
+}
+
+.radar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.radar-legend .radar-legend-note {
+  flex-basis: 100%;
+  color: var(--radar-ink-dim);
+}
+
 .radar-notice {
   position: absolute;
   top: 0.75rem;
@@ -315,23 +347,8 @@ h1 {
 }
 
 .radar-notice.radar-error {
-  background: #3f1d1d;
-  color: #fecaca;
-}
-
-/* Leaflet's controls and popups are white boxes by default. */
-.radar .leaflet-bar a {
-  background: var(--radar-panel);
-  color: var(--radar-ink);
-  border-bottom-color: var(--radar-line);
-}
-
-.radar .leaflet-bar a:hover {
-  background: var(--radar-line);
-}
-
-.radar .leaflet-bar {
-  border-color: var(--radar-line);
+  background: var(--radar-danger-bg);
+  color: var(--radar-danger-ink);
 }
 
 .radar .leaflet-control-attribution {
@@ -343,30 +360,161 @@ h1 {
   color: var(--radar-ink);
 }
 
-.radar .leaflet-popup-content-wrapper,
-.radar .leaflet-popup-tip {
-  background: var(--radar-panel);
-  color: var(--radar-ink);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+/* ---- Selected ship ----------------------------------------------------- */
+
+.ship-panel {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1000;
+  width: 18rem;
+  max-height: calc(100% - 3.5rem);
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem 0.7rem;
+  border: 1px solid var(--radar-line);
+  border-left: 3px solid var(--radar-accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--radar-panel) 94%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.85rem;
 }
 
-.radar .leaflet-popup-content {
-  font: 12px/1.6 var(--mono);
+.ship-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
-.radar .leaflet-popup-close-button {
+.ship-panel-heading svg {
+  flex: none;
+}
+
+.ship-panel h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--radar-ink-bright);
+  font-size: 1rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-panel-close {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.25rem -0.35rem -0.25rem 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--radar-ink-dim);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ship-panel-close:hover {
+  background: var(--radar-line);
+  color: var(--radar-ink-bright);
+}
+
+.ship-panel-ids,
+.ship-panel-note {
+  margin: 0.15rem 0 0;
   color: var(--radar-ink-dim);
 }
 
-@media (prefers-color-scheme: dark) {
+.ship-panel dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.9rem;
+  margin: 0.55rem 0 0;
+}
+
+/* Each row is a <div> for valid markup; let its dt and dd join the grid. */
+.ship-panel dl > div {
+  display: contents;
+}
+
+.ship-panel dt {
+  color: var(--radar-ink-dim);
+}
+
+.ship-panel dd {
+  margin: 0;
+  color: var(--radar-ink-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.ship-panel-stale {
+  color: #e8b04b;
+}
+
+.ship-panel-error {
+  color: var(--radar-danger-ink);
+}
+
+/* ---- Phones ------------------------------------------------------------ */
+
+/* Keep in step with WIDE_SCREEN in RadarLegend.tsx. */
+@media (max-width: 639px) {
   header {
-    border-bottom-color: #374151;
+    gap: 0.45rem;
+    padding: 0.5rem 0.75rem;
   }
 
-  .status .error,
-  .selection .error,
-  .location .error {
-    background: #3f1d1d;
-    color: #fecaca;
+  .brand {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+
+  h1 {
+    font-size: 0.95rem;
+  }
+
+  .status {
+    font-size: 0.8rem;
+  }
+
+  .status-updated {
+    display: none;
+  }
+
+  .location {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .location-current {
+    max-width: 6.5rem;
+  }
+
+  .location-search {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .location-search input {
+    width: 100%;
+  }
+
+  .location > button {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .button-label {
+    display: none;
+  }
+
+  /* A sheet along the bottom rather than a card covering half the radar. */
+  .ship-panel {
+    top: auto;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 1.5rem;
+    width: auto;
+    max-height: 45%;
   }
 }

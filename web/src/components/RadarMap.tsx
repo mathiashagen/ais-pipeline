@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { GeoJSON, MapContainer, useMap, useMapEvents } from "react-leaflet";
 import type { PositionedRecord, PositionRecord } from "../api/types";
 import { useCoastline } from "../hooks/useCoastline";
@@ -226,12 +226,6 @@ function MapClicks({
 
   useMapEvents({
     click: (event) => {
-      // Popup chrome -- the close button above all -- routes its clicks
-      // through the map. Dismissing the popup should uncover the track, not
-      // clear the selection and remove it.
-      const target = event.originalEvent.target;
-      if (target instanceof Element && target.closest(".leaflet-popup")) return;
-
       if (picking) onPick(event.latlng.lat, event.latlng.lng);
       else onClear();
     },
@@ -283,6 +277,10 @@ export interface RadarMapProps {
   track: PositionRecord[];
   picking: boolean;
   onPick: (lat: number, lon: number) => void;
+  /** True until the first poll has answered. */
+  loading: boolean;
+  /** Overlaid on the map, such as the selected ship's details. */
+  children?: ReactNode;
 }
 
 export function RadarMap({
@@ -296,6 +294,8 @@ export function RadarMap({
   track,
   picking,
   onPick,
+  loading,
+  children,
 }: RadarMapProps) {
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
   const coastline = useCoastline(viewBox);
@@ -348,9 +348,13 @@ export function RadarMap({
 
       <RangeControl rangeNm={rangeNm} onStep={step} />
       <RadarLegend />
+      {children}
 
-      {coastline.error && <p className="radar-notice radar-error">{coastline.error}</p>}
-      {coastline.outsideCoverage && (
+      {/* The rings draw at once, so without this an empty scope looks like
+          calm seas until the first answer lands. */}
+      {loading && <p className="radar-notice">Loading ships…</p>}
+      {!loading && coastline.error && <p className="radar-notice radar-error">{coastline.error}</p>}
+      {!loading && coastline.outsideCoverage && (
         <p className="radar-notice">No coastline data here — Kartverket's covers mainland Norway</p>
       )}
     </div>

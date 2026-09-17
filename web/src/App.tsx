@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LocationPicker } from "./components/LocationPicker";
 import { RadarMap } from "./components/RadarMap";
+import { ShipPanel } from "./components/ShipPanel";
 import { usePositions } from "./hooks/usePositions";
 import { useHistory } from "./hooks/useHistory";
 import { useNow } from "./hooks/useNow";
 import { useRadarView } from "./hooks/useRadarView";
-import { displayName, hasPosition } from "./api/types";
+import { hasPosition } from "./api/types";
 import { boundingBoxAround, inRange, type RadarCentre } from "./radar";
 import "./App.css";
 
@@ -25,10 +26,24 @@ export default function App() {
   const visible = records
     .filter(hasPosition)
     .filter((record) => inRange(centre, rangeNm, record));
-  const trackPoints = track.records.filter(hasPosition).length;
   // Looked up in the latest poll rather than kept from the click, so a name
-  // that arrives while the ship is selected shows up.
-  const selected = records.find((record) => record.mmsi === selectedMmsi);
+  // that arrives while the ship is selected shows up. Among the visible ships,
+  // so a ship that sails out of the ring is reported as gone rather than
+  // described while not drawn.
+  const selected = visible.find((record) => record.mmsi === selectedMmsi);
+
+  // Escape backs out of whatever is open: pick mode first, then the selected
+  // ship. The search box handles its own Escape, clearing the query.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select")) return;
+      if (picking) setPicking(false);
+      else setSelectedMmsi(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [picking]);
 
   function moveTo(next: RadarCentre) {
     // The range stays as it was, like a radar's range knob.
@@ -42,21 +57,25 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>AIS pipeline</h1>
+        <div className="brand">
+          <h1>AIS pipeline</h1>
 
-        <div className="status">
-          {loading && <span>Loading…</span>}
+          <p className="status" aria-live="polite">
+            {loading && "Loading…"}
 
-          {!loading && !error && (
-            <span>
-              <strong>{visible.length}</strong> ships within {rangeNm} nm
-              {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
-            </span>
-          )}
+            {!loading && !error && (
+              <>
+                <strong>{visible.length}</strong> ships within {rangeNm} nm
+                {lastUpdated && (
+                  <span className="status-updated"> · updated {lastUpdated.toLocaleTimeString()}</span>
+                )}
+              </>
+            )}
 
-          {/* Kept visible alongside the radar: the last good positions stay on
-              screen, so without this a stalled API looks like calm seas. */}
-          {error && <span className="error">{error}</span>}
+            {/* Kept visible alongside the radar: the last good positions stay on
+                screen, so without this a stalled API looks like calm seas. */}
+            {error && <span className="error">{error}</span>}
+          </p>
         </div>
 
         <LocationPicker
@@ -65,22 +84,6 @@ export default function App() {
           picking={picking}
           onPickingChange={setPicking}
         />
-
-        {selectedMmsi !== null && (
-          <div className="selection">
-            <strong>
-              {displayName({ mmsi: selectedMmsi, name: selected?.name ?? null })}
-            </strong>
-            {track.loading && " · loading track…"}
-            {track.error && <span className="error"> {track.error}</span>}
-            {!track.loading &&
-              !track.error &&
-              ` · ${trackPoints} track point${trackPoints === 1 ? "" : "s"}`}
-            <button type="button" onClick={() => setSelectedMmsi(null)}>
-              Clear
-            </button>
-          </div>
-        )}
       </header>
 
       <RadarMap
@@ -94,7 +97,18 @@ export default function App() {
         track={track.records}
         picking={picking}
         onPick={(lat, lon) => moveTo({ lat, lon, name: null })}
-      />
+        loading={loading}
+      >
+        {selectedMmsi !== null && (
+          <ShipPanel
+            mmsi={selectedMmsi}
+            record={selected}
+            track={track}
+            now={now}
+            onClose={() => setSelectedMmsi(null)}
+          />
+        )}
+      </RadarMap>
     </div>
   );
 }

@@ -28,8 +28,10 @@ function labelIcon(text: string, className = "radar-label"): DivIcon {
   const key = `${className}|${text}`;
   let icon = labelIcons.get(key);
   if (!icon) {
-    // Zero-size icon anchored at the point; the CSS positions the text off it.
-    icon = divIcon({ className, html: text, iconSize: [0, 0] });
+    // Zero-size icon anchored at the point; the CSS positions the span off
+    // it. A span, because a percentage transform on the zero-size icon itself
+    // would be a percentage of nothing.
+    icon = divIcon({ className, html: `<span>${text}</span>`, iconSize: [0, 0] });
     labelIcons.set(key, icon);
   }
   return icon;

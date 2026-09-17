@@ -1,9 +1,50 @@
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 import { searchPlaces, type Place } from "../api/placeSearch";
 import { formatCentre, type RadarCentre } from "../radar";
 
 const SEARCH_DELAY_MS = 300;
 const MIN_QUERY_LENGTH = 2;
+
+const CROSSHAIR_ICON = (
+  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="5" />
+      <path d="M8 0.5v4M8 11.5v4M0.5 8h4M11.5 8h4" />
+    </g>
+  </svg>
+);
+
+const LOCATE_ICON = (
+  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+    <path d="M14.5 1.5 1.5 7l5.5 2 2 5.5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+  </svg>
+);
+
+/**
+ * A button with an icon and a text label. On a phone the CSS hides the label
+ * to fit the header on one line; aria-label keeps the name for screen
+ * readers, and title shows it on hover.
+ */
+function IconButton({
+  label,
+  icon,
+  ...props
+}: { label: string; icon: ReactNode } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
+  return (
+    <button type="button" aria-label={label} title={label} {...props}>
+      {icon}
+      <span className="button-label">{label}</span>
+    </button>
+  );
+}
 
 export interface LocationPickerProps {
   centre: RadarCentre;
@@ -158,18 +199,20 @@ export function LocationPicker({ centre, onChange, picking, onPickingChange }: L
         )}
       </div>
 
-      <button
-        type="button"
+      <IconButton
+        label={picking ? "Click the map…" : "Pick on map"}
+        icon={CROSSHAIR_ICON}
         className={picking ? "active" : undefined}
         aria-pressed={picking}
         onClick={() => onPickingChange(!picking)}
-      >
-        {picking ? "Click the map…" : "Pick on map"}
-      </button>
+      />
 
-      <button type="button" onClick={centreOnDevicePosition} disabled={locating}>
-        {locating ? "Locating…" : "My position"}
-      </button>
+      <IconButton
+        label={locating ? "Locating…" : "My position"}
+        icon={LOCATE_ICON}
+        onClick={centreOnDevicePosition}
+        disabled={locating}
+      />
 
       {locateError && <span className="error">{locateError}</span>}
     </div>

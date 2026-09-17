@@ -1,13 +1,6 @@
 import { divIcon, type DivIcon } from "leaflet";
-import { Marker, Popup } from "react-leaflet";
-import {
-  displayName,
-  NavStatus,
-  navStatusLabel,
-  receivedAt,
-  shipTypeLabel,
-  type PositionedRecord,
-} from "../api/types";
+import { Marker } from "react-leaflet";
+import { displayName, type PositionedRecord } from "../api/types";
 import { bearingOf, categoryOf, colourOf, isStale, type BlipCategory } from "../radar";
 
 const SELECTED_COLOUR = "#f97316";
@@ -63,10 +56,6 @@ function blipIcon(
   return icon;
 }
 
-function formatValue(value: number | null, digits: number, unit: string): string {
-  return value === null ? "—" : `${value.toFixed(digits)}${unit}`;
-}
-
 export interface RadarBlipsProps {
   /** Already filtered to ships with a position inside the radar range. */
   records: PositionedRecord[];
@@ -86,53 +75,16 @@ export function RadarBlips({ records, now, selectedMmsi, onSelect }: RadarBlipsP
           <Marker
             // Keyed by MMSI, not array index: an index key makes React reuse
             // the wrong marker when the ordering shifts between polls, which
-            // closes open popups and makes ships appear to teleport.
+            // makes ships appear to teleport.
             key={record.mmsi}
             position={[record.latitude, record.longitude]}
             icon={blipIcon(categoryOf(record), bearingOf(record), stale, selected)}
             // Keep the selected ship above the others where blips overlap.
             zIndexOffset={selected ? 1000 : 0}
+            // Details open in ShipPanel; this is only the hover tooltip.
+            title={displayName(record)}
             eventHandlers={{ click: () => onSelect(record.mmsi) }}
-          >
-            <Popup>
-              <strong>{displayName(record)}</strong>
-              {record.name !== null && (
-                <>
-                  <br />
-                  MMSI {record.mmsi}
-                  {record.call_sign !== null && ` · ${record.call_sign}`}
-                </>
-              )}
-              <br />
-              Type: {shipTypeLabel(record.ship_type)}
-              {record.destination !== null && (
-                <>
-                  <br />
-                  Destination: {record.destination}
-                </>
-              )}
-              <br />
-              {record.latitude.toFixed(4)}, {record.longitude.toFixed(4)}
-              <br />
-              Speed: {formatValue(record.sog, 1, " kn")}
-              <br />
-              Course: {formatValue(record.cog, 1, "°")}
-              <br />
-              Heading:{" "}
-              {record.true_heading === null ? "—" : `${record.true_heading}°`}
-              {/* Class B position reports carry no status and decode as Not
-                  defined, as do Class A ships that send none. */}
-              {record.nav_status !== NavStatus.NotDefined && (
-                <>
-                  <br />
-                  Status: {navStatusLabel(record.nav_status)}
-                </>
-              )}
-              <br />
-              Seen: {receivedAt(record).toLocaleTimeString()}
-              {stale && " (stale)"}
-            </Popup>
-          </Marker>
+          />
         );
       })}
     </>

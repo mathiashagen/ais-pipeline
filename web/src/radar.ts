@@ -1,5 +1,6 @@
 import type { BoundingBox } from "./api/client";
 import { ageInSeconds, type PositionedRecord, type PositionRecord } from "./api/types";
+import { formatLatLon } from "./format";
 
 /** Where the radar sits. Every range, ring and filter is measured from here. */
 export interface RadarCentre {
@@ -25,8 +26,8 @@ export const RING_COUNT = 4;
 
 /**
  * How much of the available radius -- half the shorter side of the view --
- * the outer ring fills. Not 1: the ring labels sit just outside the ring and
- * the "N" above it, and would be cut off at the edge.
+ * the outer ring fills. Not 1: the "N" sits above the ring and would be cut
+ * off at the edge. The distance labels sit inside their rings.
  */
 export const RING_FILL = 0.9;
 
@@ -151,10 +152,7 @@ export function coastlineTilesIn(box: ViewBox): string[] {
 }
 
 export function formatCentre(centre: RadarCentre): string {
-  if (centre.name) return centre.name;
-  const lat = `${Math.abs(centre.lat).toFixed(3)}° ${centre.lat >= 0 ? "N" : "S"}`;
-  const lon = `${Math.abs(centre.lon).toFixed(3)}° ${centre.lon >= 0 ? "E" : "W"}`;
-  return `${lat}, ${lon}`;
+  return centre.name ?? formatLatLon(centre.lat, centre.lon, 3);
 }
 
 export type BlipCategory =
