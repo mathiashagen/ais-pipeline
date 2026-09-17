@@ -1,4 +1,13 @@
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import type { Map as LeafletMap } from "leaflet";
 import { GeoJSON, MapContainer, useMap, useMapEvents } from "react-leaflet";
 import type { PositionedRecord, PositionRecord } from "../api/types";
 import { useCoastline } from "../hooks/useCoastline";
@@ -313,6 +322,76 @@ function RangeControl({
   );
 }
 
+/** How close, in pixels, the ship may come to the panel's edge before it counts as covered. */
+const OVERLAY_CLEARANCE_PX = 16;
+
+/**
+ * Whether the overlay -- the selected ship's panel -- should sit on its
+ * alternate side so it does not cover the ship it describes. On a phone the
+ * panel is a sheet along the bottom and a ship near the bottom of the radar
+ * disappeared under it; the radar cannot pan to reveal it, so the panel moves
+ * instead: to the top on a phone, to the bottom on a wider screen.
+ *
+ * Checked after every render (each poll moves ships) and after a range change
+ * or resize. The panel only moves when the ship is under it where it is now,
+ * so it does not flick back and forth; it stays put until the ship ends up
+ * under it again. Keyed on the MMSI, so selecting another ship starts from the
+ * usual side.
+ */
+function useOverlayClearOf(
+  map: LeafletMap | null,
+  overlayRef: RefObject<HTMLDivElement | null>,
+  selected: PositionedRecord | undefined,
+): boolean {
+  const [flippedFor, setFlippedFor] = useState<number | null>(null);
+  const [viewChanges, setViewChanges] = useState(0);
+  // Where the ship was when the panel last moved. A panel too tall to clear
+  // the ship on either side would otherwise move back and forth forever.
+  const lastMove = useRef<{ mmsi: number; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+    const onViewChange = () => setViewChanges((n) => n + 1);
+    map.on("zoomend resize", onViewChange);
+    return () => {
+      map.off("zoomend resize", onViewChange);
+    };
+  }, [map]);
+
+  const mmsi = selected?.mmsi;
+  const lat = selected?.latitude;
+  const lon = selected?.longitude;
+
+  // A layout effect, so a panel that has to move does so before it is ever
+  // painted over the ship. Keyed on numbers, not the record: the record is a
+  // new object on every render.
+  useLayoutEffect(() => {
+    const panel = overlayRef.current?.firstElementChild;
+    if (!map || mmsi === undefined || lat === undefined || lon === undefined) return;
+    if (!(panel instanceof HTMLElement)) return;
+
+    const ship = map.latLngToContainerPoint([lat, lon]);
+    const origin = map.getContainer().getBoundingClientRect();
+    const box = panel.getBoundingClientRect();
+    const covered =
+      ship.x >= box.left - origin.left - OVERLAY_CLEARANCE_PX &&
+      ship.x <= box.right - origin.left + OVERLAY_CLEARANCE_PX &&
+      ship.y >= box.top - origin.top - OVERLAY_CLEARANCE_PX &&
+      ship.y <= box.bottom - origin.top + OVERLAY_CLEARANCE_PX;
+    if (!covered) return;
+
+    const last = lastMove.current;
+    if (last && last.mmsi === mmsi && Math.abs(last.x - ship.x) < 1 && Math.abs(last.y - ship.y) < 1) {
+      return;
+    }
+    lastMove.current = { mmsi, x: ship.x, y: ship.y };
+    setFlippedFor((current) => (current === mmsi ? null : mmsi));
+    // flippedFor is a dependency so the panel is checked again where it moved to.
+  }, [map, overlayRef, mmsi, lat, lon, viewChanges, flippedFor]);
+
+  return mmsi !== undefined && flippedFor === mmsi;
+}
+
 export interface RadarMapProps {
   centre: RadarCentre;
   rangeNm: number;
@@ -347,12 +426,19 @@ export function RadarMap({
 }: RadarMapProps) {
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
   const coastline = useCoastline(viewBox);
+  const [map, setMap] = useState<LeafletMap | null>(null);
 
   const step = (direction: Direction) => onRangeChange(stepRange(rangeNm, direction));
+
+  const selected =
+    selectedMmsi === null ? undefined : records.find((record) => record.mmsi === selectedMmsi);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const overlayFlipped = useOverlayClearOf(map, overlayRef, selected);
 
   return (
     <div className="radar">
       <MapContainer
+        ref={setMap}
         center={[centre.lat, centre.lon]}
         zoom={7}
         // Any zoom is allowed, not just quarter levels: the zoom for a range
@@ -397,7 +483,11 @@ export function RadarMap({
 
       <RangeControl rangeNm={rangeNm} onStep={step} />
       <RadarLegend />
-      {children}
+      {/* display: contents -- the wrapper only carries the flipped class for
+          the CSS, and the panel inside still positions against .radar. */}
+      <div ref={overlayRef} className={overlayFlipped ? "radar-overlay flipped" : "radar-overlay"}>
+        {children}
+      </div>
 
       {/* The rings draw at once, so without this an empty scope looks like
           calm seas until the first answer lands. */}
