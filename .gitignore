@@ -25,3 +25,5 @@ Thumbs.db
 CLAUDE.md
 PLAN.md
 .claude/launch.json
+
+.env

@@ -32,5 +32,14 @@ services:
     ports:
       - "8080:80"
 
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.1
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    depends_on: [web]
+    profiles: [tunnel]
+
 volumes:
   ais-data:
