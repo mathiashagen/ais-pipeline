@@ -23,6 +23,9 @@ const COASTLINE_STYLE = { color: "#5f7d68", weight: 1, opacity: 0.9 };
 const KARTVERKET_ATTRIBUTION =
   '&copy; <a href="https://www.kartverket.no/">Kartverket</a> (N250, CC BY 4.0)';
 
+const KYSTVERKET_ATTRIBUTION =
+  'AIS data &copy; <a href="https://www.kystverket.no/sjotransport-og-havn/ais/tilgang-pa-ais-data/">Kystverket</a> (NLOD)';
+
 /** Wheel travel, in pixels, that counts as one step of the range knob. */
 const WHEEL_STEP_PX = 80;
 
@@ -201,6 +204,26 @@ function RangeInput({ onStep }: { onStep: (direction: Direction) => void }) {
   return null;
 }
 
+/**
+ * Kystverket's licence for the AIS data (NLOD) requires crediting them
+ * wherever the data is shown. Added to the map directly rather than to a
+ * layer, whose credit only shows while the layer is drawn -- the coastline's
+ * disappears outside Kartverket's coverage, and ships are shown there too.
+ */
+function DataAttribution() {
+  const map = useMap();
+
+  useEffect(() => {
+    const control = map.attributionControl;
+    control.addAttribution(KYSTVERKET_ATTRIBUTION);
+    return () => {
+      control.removeAttribution(KYSTVERKET_ATTRIBUTION);
+    };
+  }, [map]);
+
+  return null;
+}
+
 /** Reports the visible area whenever it changes, so the coastline can follow it. */
 function ViewBoxReporter({ onChange }: { onChange: (box: ViewBox) => void }) {
   const map = useMap();
@@ -350,6 +373,7 @@ export function RadarMap({
         <LockedView centre={centre} rangeNm={rangeNm} />
         <RangeInput onStep={step} />
         <ViewBoxReporter onChange={setViewBox} />
+        <DataAttribution />
 
         {coastline.tiles.map((tile) => (
           <GeoJSON
