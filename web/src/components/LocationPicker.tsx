@@ -22,6 +22,18 @@ const CROSSHAIR_ICON = (
   </svg>
 );
 
+const PIN_ICON = (
+  <svg className="location-pin" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <path
+      d="M8 15s5-4.6 5-8.5A5 5 0 0 0 3 6.5C3 10.4 8 15 8 15z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <circle cx="8" cy="6.5" r="1.75" fill="currentColor" />
+  </svg>
+);
+
 const LOCATE_ICON = (
   <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
     <path d="M14.5 1.5 1.5 7l5.5 2 2 5.5z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
@@ -148,55 +160,60 @@ export function LocationPicker({ centre, onChange, picking, onPickingChange }: L
 
   return (
     <div className="location">
-      <span className="location-current" title="Radar centre">
-        {formatCentre(centre)}
-      </span>
+      {/* The current centre and the search for a new one share one frame, so
+          the place name reads as the field's value rather than loose text. */}
+      <div className="location-field">
+        {PIN_ICON}
+        <span className="location-current" title="Radar centre">
+          {formatCentre(centre)}
+        </span>
 
-      <div className="location-search">
-        <input
-          type="search"
-          placeholder="Search place…"
-          aria-label="Search for a place"
-          aria-controls={resultsId}
-          aria-expanded={showResults}
-          value={query}
-          onChange={(event) => {
-            enterPending.current = false;
-            setQuery(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setQuery("");
-            if (event.key !== "Enter" || !active) return;
-
-            if (current?.status === "done") {
-              if (current.places[0]) choose(current.places[0]);
-            } else if (current?.status !== "failed") {
-              enterPending.current = true;
-            }
-          }}
-        />
-
-        {showResults && (
-          <ul id={resultsId} className="location-results">
-            {current?.status === "searching" && <li className="location-note">Searching…</li>}
-            {current?.status === "failed" && <li className="location-note">{current.message}</li>}
-            {current?.status === "done" && current.places.length === 0 && (
-              <li className="location-note">No places found</li>
-            )}
-            {current?.status === "done" &&
-              current.places.map((place) => (
-                <li key={`${place.name}|${place.lat}|${place.lon}`}>
-                  <button type="button" onClick={() => choose(place)}>
-                    <strong>{place.name}</strong>
-                    <span>
-                      {place.kind}
-                      {place.municipality && `, ${place.municipality}`}
-                    </span>
-                  </button>
-                </li>
-              ))}
-          </ul>
-        )}
+        <div className="location-search">
+          <input
+            type="search"
+            placeholder="Search place…"
+            aria-label="Search for a place"
+            aria-controls={resultsId}
+            aria-expanded={showResults}
+            value={query}
+            onChange={(event) => {
+              enterPending.current = false;
+              setQuery(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setQuery("");
+              if (event.key !== "Enter" || !active) return;
+  
+              if (current?.status === "done") {
+                if (current.places[0]) choose(current.places[0]);
+              } else if (current?.status !== "failed") {
+                enterPending.current = true;
+              }
+            }}
+          />
+  
+          {showResults && (
+            <ul id={resultsId} className="location-results">
+              {current?.status === "searching" && <li className="location-note">Searching…</li>}
+              {current?.status === "failed" && <li className="location-note">{current.message}</li>}
+              {current?.status === "done" && current.places.length === 0 && (
+                <li className="location-note">No places found</li>
+              )}
+              {current?.status === "done" &&
+                current.places.map((place) => (
+                  <li key={`${place.name}|${place.lat}|${place.lon}`}>
+                    <button type="button" onClick={() => choose(place)}>
+                      <strong>{place.name}</strong>
+                      <span>
+                        {place.kind}
+                        {place.municipality && `, ${place.municipality}`}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <IconButton
@@ -214,7 +231,12 @@ export function LocationPicker({ centre, onChange, picking, onPickingChange }: L
         disabled={locating}
       />
 
-      {locateError && <span className="error">{locateError}</span>}
+      {/* Dropped below the header rather than inline, where it would wrap it. */}
+      {locateError && (
+        <p className="location-error error" role="alert">
+          {locateError}
+        </p>
+      )}
     </div>
   );
 }

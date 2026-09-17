@@ -10,6 +10,22 @@ import { hasPosition } from "./api/types";
 import { boundingBoxAround, inRange, type RadarCentre } from "./radar";
 import "./App.css";
 
+const STALLED_AFTER_MS = 20_000;
+
+/** The favicon, drawn inline so it can sit beside the title. */
+const LOGO = (
+  <svg className="brand-logo" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+    <rect width="32" height="32" rx="7" fill="#121614" />
+    <g fill="none" stroke="#5f7d68" strokeWidth="1.6">
+      <circle cx="16" cy="16" r="11.5" />
+      <circle cx="16" cy="16" r="5.5" />
+      <path d="M16 4.5v23M4.5 16h23" />
+    </g>
+    <path d="M22 6.2l3.6 8.9-3.6-2-3.6 2z" fill="#3dd6b0" />
+    <circle cx="16" cy="16" r="2" fill="#e8b04b" />
+  </svg>
+);
+
 export default function App() {
   const { centre, setCentre, rangeNm, setRangeNm } = useRadarView();
   // Only the ships that can be inside the outer ring are fetched. The API
@@ -26,6 +42,16 @@ export default function App() {
   const visible = records
     .filter(hasPosition)
     .filter((record) => inRange(centre, rangeNm, record));
+  // The dot in the header. Polls land every 5 s, so no answer for 20 s means
+  // they have stopped arriving even though no request has failed yet.
+  const feed = error
+    ? "error"
+    : loading
+      ? "loading"
+      : lastUpdated !== null && now - lastUpdated.getTime() > STALLED_AFTER_MS
+        ? "stalled"
+        : "live";
+
   // Looked up in the latest poll rather than kept from the click, so a name
   // that arrives while the ship is selected shows up. Among the visible ships,
   // so a ship that sails out of the ring is reported as gone rather than
@@ -58,23 +84,33 @@ export default function App() {
     <div className="app">
       <header>
         <div className="brand">
-          <h1>AIS pipeline</h1>
+          <div className="brand-name">
+            {LOGO}
+            <h1>AIS pipeline</h1>
+          </div>
 
-          <p className="status" aria-live="polite">
+          <p
+            className={`status status-${feed}`}
+            aria-live="polite"
+            title={lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : undefined}
+          >
+            <span className="status-dot" aria-hidden="true" />
             {loading && "Loading…"}
 
             {!loading && !error && (
-              <>
-                <strong>{visible.length}</strong> ships within {rangeNm} nm
-                {lastUpdated && (
-                  <span className="status-updated"> · updated {lastUpdated.toLocaleTimeString()}</span>
-                )}
-              </>
+              <span>
+                <strong>{visible.length}</strong> ships · {rangeNm} nm
+                {feed === "stalled" && <span className="status-warning"> · updates stalled</span>}
+              </span>
             )}
 
             {/* Kept visible alongside the radar: the last good positions stay on
                 screen, so without this a stalled API looks like calm seas. */}
-            {error && <span className="error">{error}</span>}
+            {error && (
+              <span className="status-message" title={error}>
+                {error}
+              </span>
+            )}
           </p>
         </div>
 
