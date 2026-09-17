@@ -84,6 +84,31 @@ function LockedView({ centre, rangeNm }: { centre: RadarCentre; rangeNm: number 
     return () => observer.disconnect();
   }, [map, centre, rangeNm]);
 
+  // Leaflet silently drops a setView that arrives while a zoom animation is
+  // still running (_tryAnimatedZoom reports it handled without doing it). A
+  // quick scroll steps the range faster than the ~250 ms animation, so the
+  // last step was lost: the rings were drawn for the new range while the map
+  // stayed zoomed for an earlier one. When an animation ends, carry on to
+  // wherever the current range says the view should be.
+  const catchUp = useEffectEvent(() => {
+    const size = map.getSize();
+    const zoom = zoomForRange(rangeNm, Math.min(size.x, size.y) / 2, centre.lat);
+    const here = map.getCenter();
+    const off =
+      Math.abs(map.getZoom() - zoom) > 1e-3 ||
+      Math.abs(here.lat - centre.lat) > 1e-6 ||
+      Math.abs(here.lng - centre.lon) > 1e-6;
+    if (off) map.setView([centre.lat, centre.lon], zoom, { animate: true });
+  });
+
+  useEffect(() => {
+    const onZoomEnd = () => catchUp();
+    map.on("zoomend", onZoomEnd);
+    return () => {
+      map.off("zoomend", onZoomEnd);
+    };
+  }, [map]);
+
   return null;
 }
 
