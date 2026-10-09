@@ -7,10 +7,14 @@ import { useHistory } from "./hooks/useHistory";
 import { useNow } from "./hooks/useNow";
 import { useRadarView } from "./hooks/useRadarView";
 import { hasPosition } from "./api/types";
-import { boundingBoxAround, inRange, type RadarCentre } from "./radar";
+import { formatAge } from "./format";
+import { boundingBoxAround, inRange, STALE_AFTER_SECONDS, type RadarCentre } from "./radar";
 import "./App.css";
 
 const STALLED_AFTER_MS = 20_000;
+
+/** Fewer ships than this in the area, and how recent the newest is says little. */
+const FEED_CHECK_MIN_SHIPS = 5;
 
 const REPOSITORY_URL = "https://github.com/mathiashagen/ais-pipeline";
 
@@ -54,6 +58,16 @@ export default function App() {
   const visible = records
     .filter(hasPosition)
     .filter((record) => inRange(centre, rangeNm, record));
+  // How old the newest report in the area is. A healthy API can keep serving
+  // positions that are hours old when the pipeline has lost Kystverket's feed,
+  // so the API answering on time is not enough to call the data live. Only
+  // judged with a few ships about: in a quiet area a gap of a few minutes
+  // between reports is normal.
+  const newestReport = records.length >= FEED_CHECK_MIN_SHIPS
+    ? records.reduce((newest, record) => Math.max(newest, record.received_at), 0)
+    : null;
+  const newestAgeSeconds = newestReport === null ? null : now / 1000 - newestReport;
+
   // The dot in the header. Polls land every 5 s, so no answer for 20 s means
   // they have stopped arriving even though no request has failed yet.
   const feed = error
@@ -62,7 +76,9 @@ export default function App() {
       ? "loading"
       : lastUpdated !== null && now - lastUpdated.getTime() > STALLED_AFTER_MS
         ? "stalled"
-        : "live";
+        : newestAgeSeconds !== null && newestAgeSeconds > STALE_AFTER_SECONDS
+          ? "delayed"
+          : "live";
 
   // Looked up in the latest poll rather than kept from the click, so a name
   // that arrives while the ship is selected shows up. Among the visible ships,
@@ -104,7 +120,14 @@ export default function App() {
           <p
             className={`status status-${feed}`}
             aria-live="polite"
-            title={lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : undefined}
+            title={[
+              feed === "delayed" && newestAgeSeconds !== null
+                ? `No new reports in this area: the newest is ${formatAge(newestAgeSeconds)}`
+                : null,
+              lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : null,
+            ]
+              .filter((line) => line !== null)
+              .join("\n") || undefined}
           >
             <span className="status-dot" aria-hidden="true" />
             {loading && "Loading…"}
@@ -160,6 +183,13 @@ export default function App() {
         picking={picking}
         onPick={(lat, lon) => moveTo({ lat, lon, name: null })}
         loading={loading}
+        // On the map rather than in the header, where a narrow screen cut it
+        // short: a radar full of hours-old ships needs saying plainly.
+        warning={
+          feed === "delayed" && newestAgeSeconds !== null
+            ? `No new reports: the newest is ${formatAge(newestAgeSeconds)}. The AIS feed from Kystverket may be interrupted.`
+            : null
+        }
       >
         {selectedMmsi !== null && (
           <ShipPanel

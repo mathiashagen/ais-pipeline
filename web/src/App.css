@@ -21,8 +21,11 @@ header {
   background: var(--radar-panel);
 }
 
+/* Gives way when the header is crowded: the status text is cut short, the
+   location controls keep their size. */
 .brand {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 1.25rem;
   min-width: 0;
@@ -64,6 +67,13 @@ h1 {
   white-space: nowrap;
 }
 
+/* The full text is in the status's tooltip. */
+.status > span:not(.status-dot) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .status strong {
   color: var(--radar-ink-bright);
   font-weight: 600;
@@ -82,7 +92,8 @@ h1 {
   box-shadow: 0 0 0 3px color-mix(in srgb, #3dd6b0 20%, transparent);
 }
 
-.status-stalled .status-dot {
+.status-stalled .status-dot,
+.status-delayed .status-dot {
   background: #e8b04b;
 }
 
@@ -112,6 +123,7 @@ h1 {
 /* Right-aligned: the location picker, then the GitHub link. */
 .header-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
@@ -529,6 +541,13 @@ h1 {
   color: var(--radar-danger-ink);
 }
 
+/* The same yellow as the header's dot when the data is old. */
+.radar-notice.radar-warning {
+  border: 1px solid color-mix(in srgb, #e8b04b 45%, transparent);
+  background: color-mix(in srgb, #e8b04b 14%, var(--radar-panel));
+  color: #f3d9a4;
+}
+
 .radar .leaflet-control-attribution {
   background: color-mix(in srgb, var(--radar-panel) 88%, transparent);
   color: var(--radar-ink-dim);
@@ -678,7 +697,7 @@ h1 {
   }
 
   .header-actions {
-    flex-basis: 100%;
+    flex: 1 1 100%;
     margin-left: 0;
   }
 
@@ -727,5 +746,11 @@ h1 {
     top: 0.75rem;
     bottom: auto;
     left: 4.75rem;
+  }
+
+  /* A notice would sit on top of the panel up there; the header's dot still
+     shows the data is old. */
+  .radar-overlay.flipped ~ .radar-notice {
+    display: none;
   }
 }

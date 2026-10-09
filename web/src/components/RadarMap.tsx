@@ -406,6 +406,8 @@ export interface RadarMapProps {
   onPick: (lat: number, lon: number) => void;
   /** True until the first poll has answered. */
   loading: boolean;
+  /** Shown over the top of the radar, such as the data being hours old. */
+  warning?: string | null;
   /** Overlaid on the map, such as the selected ship's details. */
   children?: ReactNode;
 }
@@ -422,6 +424,7 @@ export function RadarMap({
   picking,
   onPick,
   loading,
+  warning = null,
   children,
 }: RadarMapProps) {
   const [viewBox, setViewBox] = useState<ViewBox | null>(null);
@@ -492,8 +495,16 @@ export function RadarMap({
       {/* The rings draw at once, so without this an empty scope looks like
           calm seas until the first answer lands. */}
       {loading && <p className="radar-notice">Loading ships…</p>}
-      {!loading && coastline.error && <p className="radar-notice radar-error">{coastline.error}</p>}
-      {!loading && coastline.outsideCoverage && (
+      {/* One notice at a time, most important first. */}
+      {!loading && warning && (
+        <p className="radar-notice radar-warning" role="status">
+          {warning}
+        </p>
+      )}
+      {!loading && !warning && coastline.error && (
+        <p className="radar-notice radar-error">{coastline.error}</p>
+      )}
+      {!loading && !warning && coastline.outsideCoverage && (
         <p className="radar-notice">No coastline data here — Kartverket's covers mainland Norway</p>
       )}
     </div>
